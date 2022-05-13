@@ -19,7 +19,8 @@
 - inspired by Wren but want integer support
 - good integer support: i128 i64 i32 i8 u128 u64 u32 u8 f64 f32 bigint
 - destructuring and pattern matching
-- dataclass
+- emulates some derive macros
+  - `#[derive(Debug, PartialEq, Copy, Clone, Hash, Default)]`
 - GCed
 - parametric polymorphism
 - syntax influenced by c, rust, js, ts, swift
@@ -28,27 +29,27 @@
   - lexical scope with braces
   - implicit return
   - variable shadowing like rust
-  - semicolon: not required, not encouraged
-  - newline semantics: like Go and Wren
-  - whitespace largely irrelevant
+  - semicolon: require to separate expressions
+  - basically everything is expression
+    - declaration, assignment and mutation expressions return unit value `()`
+  - newline treated as whitespace
+  - whitespace completely irrelevant
   - fat arrow anonymous function
-  - has classes, but classes resembles rust structs more than OO classes
-  - no inheritance
-  - class constructs syntax = rust structs
-  - fascist typing, Duck { field = val } != Dack { field = val }
+  - struct + trait + impl
+  - strict typing, `struct Duck(str)` can't be used in place for `struct Dack(str)`
   - symbol qualification like rust
-    - instance.associated_function(argument)
-    - Constructor::associated_function(argument)
-    - path::to::module::ClassConstructor::associated_function(argument)
+    - `instance.associated_function(argument)`
+    - `Constructor::associated_function(argument)`
+    - `path::to::module::ClassConstructor::associated_function(argument)`
   - functions always require type signature annotations
   - block comments can nest
-- privacy model stolen wholesale from rust
-  - private = mod-accessible, including class fields and assoc fns
-  - public = pub keyword = exposed
-- module system stolen wholesale from rust
-- unit-testing included - also like rust
-- standard library implements functional programming primitives (functor applicative monad etc.)
-- no function overloading, no variadic
+  - privacy model stolen wholesale from rust
+    - private = mod-accessible, including class fields and assoc fns
+    - public = pub keyword = exposed
+  - module system stolen wholesale from rust
+  - unit-testing included - also like rust
+  - standard library implements functional programming primitives (functor applicative monad etc.)
+  - no function overloading, no variadic
 
 
 obviously, the name is not final.
@@ -107,9 +108,9 @@ takes_u32(i)  // compiles since i has no bounds. at compile time, i is bound to 
 
 ## Feature comparison with Rust
 
+#### Typing
 **Rust**               | **Bruh**
 :-                     | :-
-**Typing**             | **Typing**
 Static                 | Static
 Strong                 | Strong
 Strict                 | Strict
@@ -118,12 +119,21 @@ Non-naked union        | Non-naked union
 ==No introspection==   | ==Runtime type introspection==
 struct + trait + enum  | struct + trait + enum
 impl block             | impl block
-**Privacy**            | **Privacy**
+
+#### Privacy
+**Rust**               | **Bruh**
+:-                     | :-
 mod + crate + pub      | mod + crate + pub
-**Mutation and Ref**   | **Mutation and Ref**
+
+#### Mutation and Ref
+**Rust**               | **Bruh**
+:-                     | :-
 let + let mut          | let + let mut
 ==& + &mut==           |
-**Runtime**            | **Runtime**
+
+#### Runtime
+**Rust**               | **Bruh**
+:-                     | :-
 ==Compiled==           | ==Interpreted==
 ==Machine Code==       | ==bruh.vm==
 ==lifetime + borrow checker== | ==GCed==
