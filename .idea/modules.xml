@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/bruhscript.iml" filepath="$PROJECT_DIR$/bruhscript.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/bruhscript.iml" filepath="$PROJECT_DIR$/.idea/bruhscript.iml" />
     </modules>
   </component>
 </project>
