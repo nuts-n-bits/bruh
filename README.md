@@ -50,7 +50,8 @@
   - unit-testing included - also like rust
   - standard library implements functional programming primitives (functor applicative monad etc.)
   - no function overloading, no variadic
-
+- `#[test]`
+- `#[should_panic]`
 
 obviously, the name is not final.
 maybe we can all it BrushScript, StudentUserScript, or Lub?

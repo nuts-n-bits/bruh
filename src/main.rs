@@ -1,3 +1,5 @@
+extern crate core;
+
 mod lexer;
 mod bruh;
 
@@ -18,4 +20,5 @@ fn main() {
     //     "###)).unwrap();
     // println!("{:?}", results);
     // // assert_eq!();
+
 }

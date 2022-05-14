@@ -101,14 +101,6 @@ mod helper {
             Err(err) => Err(LexerErrCases::ParseFloatError(err.to_string())),
         }
     }
-    pub fn coll(
-        tokens: &mut Vec<Token>, errs: &mut Vec<LexerErrMsg>, res: Result<Token, LexerErrMsg>
-    ) -> () {
-        match res {
-            Ok(tok) => tokens.push(tok),
-            Err(err) => errs.push(err),
-        }
-    }
 }
 use helper::{*};
 
@@ -127,24 +119,30 @@ pub enum LexerErrCases {
     ZeroByteInSourceInStrLit,
     StrInterpolMaxDepthExceeded,
     UnfinishedStrLiteral,
+    UnfinishedRawStrLiteral,
+    InvalidCharInRawStrDelimitation(char),
     InvalidEscapeChar(char),
     InvalidEscapeAtEof,
+    IncompleteEscapeSequence,
+    InvalidHexEscapeSequence,
+    InvalidHexEscapeVal,
+    UnexpectedCharacter(char),
 }
 
 #[derive(Debug, PartialEq)]
 pub struct LexerErrMsg {
-    pub index: usize,
-    pub line: usize,
-    pub col: usize,
+    pub index: (usize, usize),
+    pub line: (usize, usize),
+    pub col: (usize, usize),
     pub desc: LexerErrCases,
 }
 
 impl LexerErrMsg {
     fn new(worktable: &LexingWorktable, err: LexerErrCases) -> LexerErrMsg {
         return LexerErrMsg {
-            index: worktable.index,
-            line: worktable.cur_line,
-            col: worktable.cur_col,
+            index: (worktable.token_start_index, worktable.index),
+            line: (worktable.token_start_line, worktable.cur_line),
+            col: (worktable.token_start_col, worktable.cur_col),
             desc: err
         }
     }
@@ -346,6 +344,24 @@ impl NumericLiteral {
     }
 }
 
+pub struct TokenMetadata {
+    pub token: Token,
+    pub index_bound: (usize, usize),
+    pub col_bound: (usize, usize),
+    pub line_bound: (usize, usize),
+}
+
+impl TokenMetadata {
+    fn new (worktable: &LexingWorktable, token: Token) -> TokenMetadata {
+        TokenMetadata {
+            token,
+            index_bound: (worktable.token_start_index, worktable.index),
+            col_bound: (worktable.token_start_col, worktable.cur_col),
+            line_bound: (worktable.token_start_line, worktable.cur_line),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Token {
     OpenParen,                 //  (
@@ -393,6 +409,7 @@ pub enum Token {
         StrInterpolKind,       //
     ),                         //
     StrLit(String),            //  "string"
+    RawStrLit(String),         //  r#####"string"#####
                                //
     Numeric(NumericLiteral),   //  0 0e0 0.0 0i32
                                //
@@ -401,7 +418,7 @@ pub enum Token {
 }
 
 #[derive(Debug, PartialEq)]
-enum StrInterpolKind {
+pub enum StrInterpolKind {
     Start,
     Cont,
     End,
@@ -418,6 +435,9 @@ pub struct LexingWorktable {
     index: usize,
     cur_line: usize,
     cur_col: usize,
+    token_start_index: usize,
+    token_start_line: usize,
+    token_start_col: usize,
     str_interpolation_depth: usize,
     cur_interpol_open_braces: [usize; MAX_INTERPOLATION_NESTING],
 }
@@ -429,9 +449,17 @@ impl LexingWorktable {
             index: 0,
             cur_line: START_LINE,
             cur_col: START_COL,
+            token_start_index: 0,
+            token_start_line: START_LINE,
+            token_start_col: START_COL,
             str_interpolation_depth: 0,
             cur_interpol_open_braces: [0; MAX_INTERPOLATION_NESTING],
         }
+    }
+    fn record_current_as_token_start(&mut self) {
+        self.token_start_col = self.cur_col;
+        self.token_start_line = self.cur_line;
+        self.token_start_index = self.index;
     }
     fn consume(&mut self) -> Option<char> {
         let char = self.peek();
@@ -449,7 +477,7 @@ impl LexingWorktable {
         self.index += 1;
     }
     fn advance_x(&mut self, chars: usize) {
-        for _ in 1..chars {
+        for _ in 0..chars {
             self.advance()
         }
     }
@@ -460,12 +488,6 @@ impl LexingWorktable {
     fn peek_next(&self) -> Option<char> {
         if self.index + 1 >= self.program.len() { return None }
         Some(self.program[self.index+1])
-    }
-    fn peek_next_next(&self) -> Option<char> {
-        self.peek_x(2)
-    }
-    fn peek_next_next_next(&self) -> Option<char> {
-        self.peek_x(3)
     }
     fn peek_x(&self, advance: usize) -> Option<char> {
         if self.index + advance >= self.program.len() { return None }
@@ -573,33 +595,21 @@ impl LexingWorktable {
         }
     }
 
-
-
-    // IMPLEMENTING
-    // IMPLEMENTING
-    // IMPLEMENTING
-    // IMPLEMENTING
-    // IMPLEMENTING
-    // IMPLEMENTING
-    // IMPLEMENTING
     fn consume_str_interpol(&mut self) -> Result<Token, LexerErrMsg> { self._consume_str_literal(true) }
     fn consume_str_literal(&mut self) -> Result<Token, LexerErrMsg> { self._consume_str_literal(false) }
     fn _consume_str_literal(&mut self, is_interpol_cont: bool) -> Result<Token, LexerErrMsg> {
         let mut chars: Vec<char> = vec![];
-        while let Some(char) = self.peek() {
+        while let Some(char) = self.consume() {
             if char == '"' {
-                self.advance();
                 return if is_interpol_cont {
                     Ok(Token::StrInterpol(chars.into_iter().collect(), self.str_interpolation_depth, StrInterpolKind::End))
                 }
                 else { Ok(Token::StrLit(chars.into_iter().collect())) };
             }
             else if char == '\r' {  // ignore '\r' completely
-                self.advance();
                 continue
             }
             else if char == '\0' {  // Bob says do not advance, but why?? See wren_compiler.c:986 but I don't understand why
-                self.advance();  // I don't think rust works the same as C so I advance it
                 return Err(LexerErrMsg::new(&self, LexerErrCases::ZeroByteInSourceInStrLit))
             }
             else if char == '$' && self.peek_next() == Some('{') {
@@ -609,7 +619,6 @@ impl LexingWorktable {
                 self.cur_interpol_open_braces[self.str_interpolation_depth] += 1;
                 self.str_interpolation_depth += 1;
                 self.advance();
-                self.advance();
                 return Ok(Token::StrInterpol(
                     chars.into_iter().collect(),
                     self.str_interpolation_depth-1,
@@ -617,7 +626,6 @@ impl LexingWorktable {
                 ));
             }
             else if char == '\\' {
-                self.advance();
                 let esc = self.peek();
                 self.advance();
                 match esc {
@@ -644,33 +652,95 @@ impl LexingWorktable {
                 }
             }
             else {
-                self.advance();
                 chars.push(char)
             }
         }
         return Err(LexerErrMsg::new(&self, LexerErrCases::UnfinishedStrLiteral))
     }
-    // IMPLEMENTING
-    // IMPLEMENTING
-    // IMPLEMENTING
-    // IMPLEMENTING
-    // IMPLEMENTING
-    // IMPLEMENTING
-    // IMPLEMENTING
 
-    fn read_hex_escape(&mut self, len: usize) -> Result<char, LexerErrMsg> {
-        unimplemented!();
-        Ok(0x69 as char)
+
+
+
+    // IMPLEMENTING
+    // IMPLEMENTING
+    // IMPLEMENTING
+    // IMPLEMENTING
+    // IMPLEMENTING
+    // IMPLEMENTING
+    // IMPLEMENTING
+    fn consume_raw_str_literal(&mut self) -> Result<Token, LexerErrMsg> {
+        let mut hash_count_begin = 0usize;  // remember, the first hash is not consumed by the lexer
+        let mut collected: Vec<char> = vec![];
+        loop {
+            match self.consume() {
+                None => return Err(LexerErrMsg::new(&self, LexerErrCases::UnfinishedRawStrLiteral)),
+                Some('#') => hash_count_begin += 1,
+                Some('"') => break,
+                Some(ch) => return Err(LexerErrMsg::new(&self, LexerErrCases::InvalidCharInRawStrDelimitation(ch))),
+            }
+        }
+        'raw_char_consumption: loop {
+            match self.consume() {
+                None => return Err(LexerErrMsg::new(&self, LexerErrCases::UnfinishedRawStrLiteral)),
+                Some('"') => {
+                    // let mut hash_count_end = 0usize;
+                    for i in 0..hash_count_begin {
+                        match self.peek_x(i) {
+                            None => return Err(LexerErrMsg::new(&self, LexerErrCases::UnfinishedRawStrLiteral)),
+                            Some('#') => continue,
+                            Some(_) => { collected.push('"') ;; continue 'raw_char_consumption }
+                        }
+                    }
+                    // if the loop ends without jumping to another site, it means sufficiently many
+                    // hashes have been seen.
+                    self.advance_x(hash_count_begin);
+                    return Ok(Token::RawStrLit(collected.into_iter().collect()))
+                }
+                Some(ch) => collected.push(ch),
+            }
+        }
+
+        ;
+        unimplemented!()
     }
-
+    fn read_hex_escape(&mut self, len: usize) -> Result<char, LexerErrMsg> {
+        let mut accumulator = 0u32;
+        for i in 0..len {
+            self.advance();
+            let hex_digit = match self.peek() {
+                None => return Err(LexerErrMsg::new(&self, LexerErrCases::IncompleteEscapeSequence)),
+                Some(ch) => hex_digit_val(ch),
+            };
+            let hex_val = match hex_digit {
+                None => return Err(LexerErrMsg::new(&self, LexerErrCases::InvalidHexEscapeSequence)),
+                Some(hex_val) => hex_val
+            };
+            accumulator = (accumulator << 4) | hex_val as u32;
+        }
+        match char::from_u32(accumulator) {
+            None => Err(LexerErrMsg::new(&self, LexerErrCases::InvalidHexEscapeVal)),
+            Some(char) => Ok(char)
+        }
+    }
     fn read_unicode_escape(&mut self, len: usize) -> Result<char, LexerErrMsg> {
         unimplemented!();
-        Ok(0x69 as char)
     }
+    fn read_raw_str(&mut self) -> Result<Token, LexerErrMsg> {
+        unimplemented!();
+    }
+    // IMPLEMENTING
+    // IMPLEMENTING
+    // IMPLEMENTING
+    // IMPLEMENTING
+    // IMPLEMENTING
+    // IMPLEMENTING
+    // IMPLEMENTING
 }
 
 pub fn lexer_step(worktable: &mut LexingWorktable) -> Result<Token, LexerErrMsg> {
-    while let Some(char) = worktable.consume() {
+    while let Some(char) = worktable.peek() {
+        worktable.record_current_as_token_start();
+        worktable.advance();
         match char {
             '(' => return Ok(Token::OpenParen),
             ')' => return Ok(Token::CloseParen),
@@ -736,13 +806,16 @@ pub fn lexer_step(worktable: &mut LexingWorktable) -> Result<Token, LexerErrMsg>
             ' ' | '\t' | '\n' | '\r' => worktable.skip_whitespace(),
             '"' => return Ok(worktable.consume_str_literal()?),
             _ => {
-                if char_can_start_ident(char) {
-                    return Ok(worktable.consume_ident(char)?);
+                return if char == 'r' && worktable.peek() == Some('#') {
+                    Ok(worktable.consume_raw_str_literal()?)
                 }
-                else if char_can_start_num(char) {
-                    return Ok(worktable.consume_possible_numeric_literal(char)?)
+                else if char_can_start_ident(char) {
+                    Ok(worktable.consume_ident(char)?)
+                } else if char_can_start_num(char) {
+                    Ok(worktable.consume_possible_numeric_literal(char)?)
+                } else {
+                    Err(LexerErrMsg::new(&worktable, LexerErrCases::UnexpectedCharacter(char)))
                 }
-
             }
         }
     }
@@ -753,7 +826,8 @@ pub fn lexer_step(worktable: &mut LexingWorktable) -> Result<Token, LexerErrMsg>
 pub fn lexer(worktable: &mut LexingWorktable) -> (Vec<Token>, Vec<LexerErrMsg>) {
     let mut tokens: Vec<Token> = vec![];
     let mut errors: Vec<LexerErrMsg> = vec![];
-    while let result = lexer_step(worktable) {
+    loop {
+        let result = lexer_step(worktable);
         if let Ok(Token::Eof) = result {
            tokens.push(Token::Eof);
            break
@@ -768,7 +842,6 @@ pub fn lexer(worktable: &mut LexingWorktable) -> (Vec<Token>, Vec<LexerErrMsg>) 
 
 #[cfg(test)]
 mod tests {
-
     use super::{lexer, Keyword, LexingWorktable, Token, last_2_are, last_3_are, last_4_are, LexerErrCases, LexerErrMsg, NumericLiteral, remove_leading_0s};
 
     fn wtb(str: &str) -> LexingWorktable {
@@ -1003,7 +1076,7 @@ mod tests {
         let results = &lexer(&mut wtb("0x0__00")).1[0];
         assert_eq!(results.desc, LexerErrCases::NumLiteralContinuousUnderscore);
         let results = &lexer(&mut wtb("0000__i128")).1[0];
-        println!("{:?}", results);
+        // println!("{:?}", results);
         assert_eq!(results.desc, LexerErrCases::NumLiteralContinuousUnderscore);
 
         // tailing underscore
@@ -1015,24 +1088,51 @@ mod tests {
         assert_eq!(results, &Token::Numeric(NumericLiteral::I128Lit(0)));
 
         // wacky letters in literal
-        let results = &lexer(&mut wtb("\n\n\n\n999m99"));
-        println!("{:?}", results);
+        let (results, errs) = &lexer(&mut wtb("\n\n\n\n999m99"));
+        assert!(match errs[0].desc { LexerErrCases::ParseFloatError(_) => true, _ => false });
 
         // multiple syntax errors
-        let results = &lexer(&mut wtb("0000__ 0xxxx 000000r"));
-        println!("{:?}", results);
+        let (results, errs) = &lexer(&mut wtb("0000__ 0xxxx 000000r"));
+        // println!("{:?}", errs);
+        assert_eq!(errs.len(), 3);
+        assert_eq!(errs[0].desc, LexerErrCases::NumLiteralTrailingUnderscore);
+        assert_eq!(errs[1].desc, LexerErrCases::HexIntegerLiteralInvalidChar);
+        assert!(match errs[2].desc { LexerErrCases::ParseFloatError(_) => true, _ => false });
     }
 
     #[test]
     fn str_interpol() {
         // simple interpolation
         let results = lexer(&mut wtb(r###"
-            "the red ${ fox("lol", 0x77457, "fox! ${ interpol }") } jumped over the ${ "graphite" } dog"
+            `"the red ${ fox("lol", 0x77457, "fox! ${ interpol~ }") } jumped over the ${ "graphite" } dog"
+            "unfinished string!!!!!!!!
         "###));
         println!("{:?}", results);
         // assert_eq!();
-
     }
 
+    #[test]
+    fn raw_str() {
+        // simple interpolation
+        let (results, errs) = lexer(&mut wtb(r#########################"
+            r##"lol this is raw string right here"##
+
+            r######"lol raw string with
+            lol
+            lol
+            line "ah-ha"##### break"######
+
+            r####"FUCK THIS
+
+        "#########################));
+        //println!("{:?} \n{:?}", results, errs);
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0], Token::RawStrLit("lol this is raw string right here".into()));
+        assert_eq!(results[1], Token::RawStrLit("lol raw string with\n            lol\n            lol\n            line \"ah-ha\"##### break".into()));
+        assert_eq!(results[2], Token::Eof);
+
+        assert_eq!(errs.len(), 1);
+        assert_eq!(errs[0].desc, LexerErrCases::UnfinishedRawStrLiteral);
+    }
 }
 
