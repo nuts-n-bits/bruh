@@ -10,4 +10,9 @@ use lexer::LexingWorktable;
 
 fn main() {
 
+
+    use crate::lexer::{*};
+    use crate::parser::ParsingWorktable;
+
+
 }

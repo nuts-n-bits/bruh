@@ -156,6 +156,8 @@ pub enum Keyword {
     Mod,          //  mod
     Use,          //  use
     Class,        //  class
+    Struct,       //  struct
+    Enum,         //  enum
     If,           //  if
     Else,         //  else
     Return,       //  return
@@ -175,6 +177,7 @@ pub enum Keyword {
     Super,        //  super
     Crate,        //  crate
     Self_,        //  self
+    As,           //  as
 }
 
 impl Keyword {
@@ -187,6 +190,8 @@ impl Keyword {
             "mod"      => Some(Keyword::Mod),
             "use"      => Some(Keyword::Use),
             "class"    => Some(Keyword::Class),
+            "struct"   => Some(Keyword::Struct),
+            "enum"     => Some(Keyword::Enum),
             "if"       => Some(Keyword::If),
             "else"     => Some(Keyword::Else),
             "return"   => Some(Keyword::Return),
@@ -206,6 +211,7 @@ impl Keyword {
             "super"    => Some(Keyword::Super),
             "crate"    => Some(Keyword::Crate),
             "self"     => Some(Keyword::Self_),
+            "as"       => Some(Keyword::As),
             _          => None,
         }
 
@@ -343,7 +349,7 @@ impl NumericLiteral {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 pub struct Token {
     pub core: TokenCore,
     pub index_range: (usize, usize),
@@ -573,7 +579,7 @@ impl LexingWorktable {
         }
         let num_lit = NumericLiteral::from_chars(chars);
         match num_lit {
-            Ok(num_lit) => Ok(worktable.add_metadata(TokenCore::Numeric(num_lit))),
+            Ok(num_lit) => Ok(self.add_metadata(TokenCore::Numeric(num_lit))),
             Err(lex_err_case) => Err(LexerErrMsg::new(&self, lex_err_case))
         }
     }
@@ -702,9 +708,7 @@ impl LexingWorktable {
                 Some(ch) => collected.push(ch),
             }
         }
-
-        ;
-        unimplemented!()
+        // unreachable
     }
     fn read_hex_escape(&mut self, len: usize) -> Result<char, LexerErrMsg> {
         let mut accumulator = 0u32;
@@ -831,9 +835,14 @@ pub fn lexer(worktable: &mut LexingWorktable) -> (Vec<Token>, Vec<LexerErrMsg>) 
     let mut errors: Vec<LexerErrMsg> = vec![];
     loop {
         let result = lexer_step(worktable);
-        if let Ok(ref tm) = result {
-            if tm.core == TokenCore::Eof {
-                tokens.push(tm.clone());
+        if let Ok(ref tok) = result {
+            if tok.core == TokenCore::Eof {
+                tokens.push(Token {
+                    core: TokenCore::Eof,
+                    index_range: tok.index_range,
+                    col_range: tok.col_range,
+                    line_range: tok.line_range,
+                });
                 break
             }
         }
@@ -904,32 +913,32 @@ mod tests {
         let (results, errs) = lexer(&mut worktable);
         assert_eq!(errs.len(), 0);
         assert_eq!(results.len(), 15);
-        assert_eq!(results[0], TokenCore::OpenParen);
-        assert_eq!(results[1], TokenCore::DashEq);
-        assert_eq!(results[2], TokenCore::EqEq);
-        assert_eq!(results[3], TokenCore::PlusEq);
-        assert_eq!(results[4], TokenCore::Dot);
-        assert_eq!(results[5], TokenCore::Ident("ident".into()));
-        assert_eq!(results[6], TokenCore::DotDot);
-        assert_eq!(results[7], TokenCore::Ident("ident2".into()));
-        assert_eq!(results[8], TokenCore::DotDot);
-        assert_eq!(results[9], TokenCore::Dot);
-        assert_eq!(results[10], TokenCore::DotDot);
-        assert_eq!(results[11], TokenCore::DotDot);
-        assert_eq!(results[12], TokenCore::Keyword(Keyword::For));
-        assert_eq!(results[13], TokenCore::CloseParen);
-        assert_eq!(results[14], TokenCore::Eof);
+        assert_eq!(results[0].core, TokenCore::OpenParen);
+        assert_eq!(results[1].core, TokenCore::DashEq);
+        assert_eq!(results[2].core, TokenCore::EqEq);
+        assert_eq!(results[3].core, TokenCore::PlusEq);
+        assert_eq!(results[4].core, TokenCore::Dot);
+        assert_eq!(results[5].core, TokenCore::Ident("ident".into()));
+        assert_eq!(results[6].core, TokenCore::DotDot);
+        assert_eq!(results[7].core, TokenCore::Ident("ident2".into()));
+        assert_eq!(results[8].core, TokenCore::DotDot);
+        assert_eq!(results[9].core, TokenCore::Dot);
+        assert_eq!(results[10].core, TokenCore::DotDot);
+        assert_eq!(results[11].core, TokenCore::DotDot);
+        assert_eq!(results[12].core, TokenCore::Keyword(Keyword::For));
+        assert_eq!(results[13].core, TokenCore::CloseParen);
+        assert_eq!(results[14].core, TokenCore::Eof);
 
         let mut worktable = LexingWorktable::new(
             "let fn mut pub mod".chars().collect()
         );
         let (results, err) = lexer(&mut worktable);
         assert_eq!(errs.len(), 0);
-        assert_eq!(results[0], TokenCore::Keyword(Keyword::Let));
-        assert_eq!(results[1], TokenCore::Keyword(Keyword::Fn));
-        assert_eq!(results[2], TokenCore::Keyword(Keyword::Mut));
-        assert_eq!(results[3], TokenCore::Keyword(Keyword::Pub));
-        assert_eq!(results[4], TokenCore::Keyword(Keyword::Mod));
+        assert_eq!(results[0].core, TokenCore::Keyword(Keyword::Let));
+        assert_eq!(results[1].core, TokenCore::Keyword(Keyword::Fn));
+        assert_eq!(results[2].core, TokenCore::Keyword(Keyword::Mut));
+        assert_eq!(results[3].core, TokenCore::Keyword(Keyword::Pub));
+        assert_eq!(results[4].core, TokenCore::Keyword(Keyword::Mod));
 
         let mut worktable = LexingWorktable::new(
             "fn add(x: i64, y: i64) -> i64 { x + y } ;;\nlet id = x: i64 -> i64 => x "
@@ -940,36 +949,36 @@ mod tests {
         let mut ip = || { i+=1 ; i-1 };
         assert_eq!(errs.len(), 0);
         assert_eq!(results.len(), 31);
-        assert_eq!(results[ip()], TokenCore::Keyword(Keyword::Fn));
-        assert_eq!(results[ip()], TokenCore::Ident("add".into()));
-        assert_eq!(results[ip()], TokenCore::OpenParen);
-        assert_eq!(results[ip()], TokenCore::Ident("x".into()));
-        assert_eq!(results[ip()], TokenCore::Colon);
-        assert_eq!(results[ip()], TokenCore::Ident("i64".into()));
-        assert_eq!(results[ip()], TokenCore::Comma);
-        assert_eq!(results[ip()], TokenCore::Ident("y".into()));
-        assert_eq!(results[ip()], TokenCore::Colon);
-        assert_eq!(results[ip()], TokenCore::Ident("i64".into()));
-        assert_eq!(results[ip()], TokenCore::CloseParen);
-        assert_eq!(results[ip()], TokenCore::Arrow);
-        assert_eq!(results[ip()], TokenCore::Ident("i64".into()));
-        assert_eq!(results[ip()], TokenCore::OpenBrace);
-        assert_eq!(results[ip()], TokenCore::Ident("x".into()));
-        assert_eq!(results[ip()], TokenCore::Plus);
-        assert_eq!(results[ip()], TokenCore::Ident("y".into()));
-        assert_eq!(results[ip()], TokenCore::CloseBrace);
-        assert_eq!(results[ip()], TokenCore::Semicolon);
-        assert_eq!(results[ip()], TokenCore::Semicolon);
-        assert_eq!(results[ip()], TokenCore::Keyword(Keyword::Let));
-        assert_eq!(results[ip()], TokenCore::Ident("id".into()));
-        assert_eq!(results[ip()], TokenCore::Eq);
-        assert_eq!(results[ip()], TokenCore::Ident("x".into()));
-        assert_eq!(results[ip()], TokenCore::Colon);
-        assert_eq!(results[ip()], TokenCore::Ident("i64".into()));
-        assert_eq!(results[ip()], TokenCore::Arrow);
-        assert_eq!(results[ip()], TokenCore::Ident("i64".into()));
-        assert_eq!(results[ip()], TokenCore::FatArrow);
-        assert_eq!(results[ip()], TokenCore::Ident("x".into()));
+        assert_eq!(results[ip()].core, TokenCore::Keyword(Keyword::Fn));
+        assert_eq!(results[ip()].core, TokenCore::Ident("add".into()));
+        assert_eq!(results[ip()].core, TokenCore::OpenParen);
+        assert_eq!(results[ip()].core, TokenCore::Ident("x".into()));
+        assert_eq!(results[ip()].core, TokenCore::Colon);
+        assert_eq!(results[ip()].core, TokenCore::Ident("i64".into()));
+        assert_eq!(results[ip()].core, TokenCore::Comma);
+        assert_eq!(results[ip()].core, TokenCore::Ident("y".into()));
+        assert_eq!(results[ip()].core, TokenCore::Colon);
+        assert_eq!(results[ip()].core, TokenCore::Ident("i64".into()));
+        assert_eq!(results[ip()].core, TokenCore::CloseParen);
+        assert_eq!(results[ip()].core, TokenCore::Arrow);
+        assert_eq!(results[ip()].core, TokenCore::Ident("i64".into()));
+        assert_eq!(results[ip()].core, TokenCore::OpenBrace);
+        assert_eq!(results[ip()].core, TokenCore::Ident("x".into()));
+        assert_eq!(results[ip()].core, TokenCore::Plus);
+        assert_eq!(results[ip()].core, TokenCore::Ident("y".into()));
+        assert_eq!(results[ip()].core, TokenCore::CloseBrace);
+        assert_eq!(results[ip()].core, TokenCore::Semicolon);
+        assert_eq!(results[ip()].core, TokenCore::Semicolon);
+        assert_eq!(results[ip()].core, TokenCore::Keyword(Keyword::Let));
+        assert_eq!(results[ip()].core, TokenCore::Ident("id".into()));
+        assert_eq!(results[ip()].core, TokenCore::Eq);
+        assert_eq!(results[ip()].core, TokenCore::Ident("x".into()));
+        assert_eq!(results[ip()].core, TokenCore::Colon);
+        assert_eq!(results[ip()].core, TokenCore::Ident("i64".into()));
+        assert_eq!(results[ip()].core, TokenCore::Arrow);
+        assert_eq!(results[ip()].core, TokenCore::Ident("i64".into()));
+        assert_eq!(results[ip()].core, TokenCore::FatArrow);
+        assert_eq!(results[ip()].core, TokenCore::Ident("x".into()));
     }
 
     #[test]
@@ -980,17 +989,17 @@ mod tests {
         let (results, errs) = lexer(&mut worktable);
         assert_eq!(errs.len(), 0);
         assert_eq!(results.len(), 11);
-        assert_eq!(results[0], TokenCore::Keyword(Keyword::Let));
-        assert_eq!(results[1], TokenCore::Ident("x".into()));
-        assert_eq!(results[2], TokenCore::Colon);
-        assert_eq!(results[3], TokenCore::Ident("i64".into()));
-        assert_eq!(results[4], TokenCore::Eq);
-        assert_eq!(results[5], TokenCore::Numeric(NumericLiteral::I64Lit(488285)));
-        assert_eq!(results[6], TokenCore::Dash);
-        assert_eq!(results[7], TokenCore::Numeric(NumericLiteral::ImplicitDecF(535e-99)));
-        assert_eq!(results[8], TokenCore::Numeric(NumericLiteral::ImplicitHexI("4294967296".into())));
-        assert_eq!(results[9], TokenCore::Numeric(NumericLiteral::ImplicitDecI("4294967296".into())));
-        assert_eq!(results[10], TokenCore::Eof);
+        assert_eq!(results[0].core, TokenCore::Keyword(Keyword::Let));
+        assert_eq!(results[1].core, TokenCore::Ident("x".into()));
+        assert_eq!(results[2].core, TokenCore::Colon);
+        assert_eq!(results[3].core, TokenCore::Ident("i64".into()));
+        assert_eq!(results[4].core, TokenCore::Eq);
+        assert_eq!(results[5].core, TokenCore::Numeric(NumericLiteral::I64Lit(488285)));
+        assert_eq!(results[6].core, TokenCore::Dash);
+        assert_eq!(results[7].core, TokenCore::Numeric(NumericLiteral::ImplicitDecF(535e-99)));
+        assert_eq!(results[8].core, TokenCore::Numeric(NumericLiteral::ImplicitHexI("4294967296".into())));
+        assert_eq!(results[9].core, TokenCore::Numeric(NumericLiteral::ImplicitDecI("4294967296".into())));
+        assert_eq!(results[10].core, TokenCore::Eof);
 
         let mut worktable = wtb(
             "5783628 0 483.535 553.0 0.0 435e3 30e0 0x425 0x0 0x000000"  // every int type (1/4)
@@ -998,17 +1007,17 @@ mod tests {
         let (results, errs) = lexer(&mut worktable);
         assert_eq!(errs.len(), 0);
         assert_eq!(results.len(), 11);
-        assert_eq!(results[0], TokenCore::Numeric(NumericLiteral::ImplicitDecI("5783628".into())));
-        assert_eq!(results[1], TokenCore::Numeric(NumericLiteral::ImplicitDecI("0".into())));
-        assert_eq!(results[2], TokenCore::Numeric(NumericLiteral::ImplicitDecF(483.535)));
-        assert_eq!(results[3], TokenCore::Numeric(NumericLiteral::ImplicitDecF(553.0)));
-        assert_eq!(results[4], TokenCore::Numeric(NumericLiteral::ImplicitDecF(0.0)));
-        assert_eq!(results[5], TokenCore::Numeric(NumericLiteral::ImplicitDecF(435e3)));
-        assert_eq!(results[6], TokenCore::Numeric(NumericLiteral::ImplicitDecF(30e0)));
-        assert_eq!(results[7], TokenCore::Numeric(NumericLiteral::ImplicitHexI("425".into())));
-        assert_eq!(results[8], TokenCore::Numeric(NumericLiteral::ImplicitHexI("0".into())));
-        assert_eq!(results[9], TokenCore::Numeric(NumericLiteral::ImplicitHexI("0".into())));
-        assert_eq!(results[10], TokenCore::Eof);
+        assert_eq!(results[0].core, TokenCore::Numeric(NumericLiteral::ImplicitDecI("5783628".into())));
+        assert_eq!(results[1].core, TokenCore::Numeric(NumericLiteral::ImplicitDecI("0".into())));
+        assert_eq!(results[2].core, TokenCore::Numeric(NumericLiteral::ImplicitDecF(483.535)));
+        assert_eq!(results[3].core, TokenCore::Numeric(NumericLiteral::ImplicitDecF(553.0)));
+        assert_eq!(results[4].core, TokenCore::Numeric(NumericLiteral::ImplicitDecF(0.0)));
+        assert_eq!(results[5].core, TokenCore::Numeric(NumericLiteral::ImplicitDecF(435e3)));
+        assert_eq!(results[6].core, TokenCore::Numeric(NumericLiteral::ImplicitDecF(30e0)));
+        assert_eq!(results[7].core, TokenCore::Numeric(NumericLiteral::ImplicitHexI("425".into())));
+        assert_eq!(results[8].core, TokenCore::Numeric(NumericLiteral::ImplicitHexI("0".into())));
+        assert_eq!(results[9].core, TokenCore::Numeric(NumericLiteral::ImplicitHexI("0".into())));
+        assert_eq!(results[10].core, TokenCore::Eof);
 
         let mut worktable = wtb(
             "477924i128 0i128 i128 179074592501695641056747015895i128 48924757387452198439824u128 \
@@ -1017,17 +1026,17 @@ mod tests {
         let (results, errs) = lexer(&mut worktable);
         assert_eq!(errs.len(), 0);
         assert_eq!(results.len(), 11);
-        assert_eq!(results[0], TokenCore::Numeric(NumericLiteral::I128Lit(477924)));
-        assert_eq!(results[1], TokenCore::Numeric(NumericLiteral::I128Lit(0)));
-        assert_eq!(results[2], TokenCore::Ident("i128".into()));
-        assert_eq!(results[3], TokenCore::Numeric(NumericLiteral::I128Lit(179074592501695641056747015895)));
-        assert_eq!(results[4], TokenCore::Numeric(NumericLiteral::U128Lit(48924757387452198439824)));
-        assert_eq!(results[5], TokenCore::Numeric(NumericLiteral::U128Lit(0)));
-        assert_eq!(results[6], TokenCore::Numeric(NumericLiteral::I64Lit(3749257)));
-        assert_eq!(results[7], TokenCore::Numeric(NumericLiteral::I64Lit(0)));
-        assert_eq!(results[8], TokenCore::Numeric(NumericLiteral::U64Lit(47837585325)));
-        assert_eq!(results[9], TokenCore::Numeric(NumericLiteral::U64Lit(0)));
-        assert_eq!(results[10], TokenCore::Eof);
+        assert_eq!(results[0].core, TokenCore::Numeric(NumericLiteral::I128Lit(477924)));
+        assert_eq!(results[1].core, TokenCore::Numeric(NumericLiteral::I128Lit(0)));
+        assert_eq!(results[2].core, TokenCore::Ident("i128".into()));
+        assert_eq!(results[3].core, TokenCore::Numeric(NumericLiteral::I128Lit(179074592501695641056747015895)));
+        assert_eq!(results[4].core, TokenCore::Numeric(NumericLiteral::U128Lit(48924757387452198439824)));
+        assert_eq!(results[5].core, TokenCore::Numeric(NumericLiteral::U128Lit(0)));
+        assert_eq!(results[6].core, TokenCore::Numeric(NumericLiteral::I64Lit(3749257)));
+        assert_eq!(results[7].core, TokenCore::Numeric(NumericLiteral::I64Lit(0)));
+        assert_eq!(results[8].core, TokenCore::Numeric(NumericLiteral::U64Lit(47837585325)));
+        assert_eq!(results[9].core, TokenCore::Numeric(NumericLiteral::U64Lit(0)));
+        assert_eq!(results[10].core, TokenCore::Eof);
 
         let mut worktable = wtb(
             "0i32 59753989i32 0_323_994i32 0u32 48284934u32 4294967295u32"  // every int type (3/4)
@@ -1035,13 +1044,13 @@ mod tests {
         let (results, errs) = lexer(&mut worktable);
         assert_eq!(errs.len(), 0);
         assert_eq!(results.len(), 7);
-        assert_eq!(results[0], TokenCore::Numeric(NumericLiteral::I32Lit(0)));
-        assert_eq!(results[1], TokenCore::Numeric(NumericLiteral::I32Lit(59753989)));
-        assert_eq!(results[2], TokenCore::Numeric(NumericLiteral::I32Lit(0_323_994)));
-        assert_eq!(results[3], TokenCore::Numeric(NumericLiteral::U32Lit(0)));
-        assert_eq!(results[4], TokenCore::Numeric(NumericLiteral::U32Lit(48284934)));
-        assert_eq!(results[5], TokenCore::Numeric(NumericLiteral::U32Lit(4294967295)));
-        assert_eq!(results[6], TokenCore::Eof);
+        assert_eq!(results[0].core, TokenCore::Numeric(NumericLiteral::I32Lit(0)));
+        assert_eq!(results[1].core, TokenCore::Numeric(NumericLiteral::I32Lit(59753989)));
+        assert_eq!(results[2].core, TokenCore::Numeric(NumericLiteral::I32Lit(0_323_994)));
+        assert_eq!(results[3].core, TokenCore::Numeric(NumericLiteral::U32Lit(0)));
+        assert_eq!(results[4].core, TokenCore::Numeric(NumericLiteral::U32Lit(48284934)));
+        assert_eq!(results[5].core, TokenCore::Numeric(NumericLiteral::U32Lit(4294967295)));
+        assert_eq!(results[6].core, TokenCore::Eof);
 
         let mut worktable = wtb(
             "0i8 127i8 0u8 255u8 0n 2048n 9999999999999999999999999999999999999999999999999999999999999999999999999999n \
@@ -1050,15 +1059,15 @@ mod tests {
         let (results, errs) = lexer(&mut worktable);
         assert_eq!(errs.len(), 0);
         assert_eq!(results.len(), 9);
-        assert_eq!(results[0], TokenCore::Numeric(NumericLiteral::I8Lit(0)));
-        assert_eq!(results[1], TokenCore::Numeric(NumericLiteral::I8Lit(127)));
-        assert_eq!(results[2], TokenCore::Numeric(NumericLiteral::U8Lit(0)));
-        assert_eq!(results[3], TokenCore::Numeric(NumericLiteral::U8Lit(255)));
-        assert_eq!(results[4], TokenCore::Numeric(NumericLiteral::BigDecLit("0".into())));
-        assert_eq!(results[5], TokenCore::Numeric(NumericLiteral::BigDecLit("2048".into())));
-        assert_eq!(results[6], TokenCore::Numeric(NumericLiteral::BigDecLit("9999999999999999999999999999999999999999999999999999999999999999999999999999".into())));
-        assert_eq!(results[7], TokenCore::Numeric(NumericLiteral::BigHexLit("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF".into())));
-        assert_eq!(results[8], TokenCore::Eof);
+        assert_eq!(results[0].core, TokenCore::Numeric(NumericLiteral::I8Lit(0)));
+        assert_eq!(results[1].core, TokenCore::Numeric(NumericLiteral::I8Lit(127)));
+        assert_eq!(results[2].core, TokenCore::Numeric(NumericLiteral::U8Lit(0)));
+        assert_eq!(results[3].core, TokenCore::Numeric(NumericLiteral::U8Lit(255)));
+        assert_eq!(results[4].core, TokenCore::Numeric(NumericLiteral::BigDecLit("0".into())));
+        assert_eq!(results[5].core, TokenCore::Numeric(NumericLiteral::BigDecLit("2048".into())));
+        assert_eq!(results[6].core, TokenCore::Numeric(NumericLiteral::BigDecLit("9999999999999999999999999999999999999999999999999999999999999999999999999999".into())));
+        assert_eq!(results[7].core, TokenCore::Numeric(NumericLiteral::BigHexLit("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF".into())));
+        assert_eq!(results[8].core, TokenCore::Eof);
 
         let mut worktable = wtb(
             "128i8 2147483648i32"  // some edge cases
@@ -1066,9 +1075,9 @@ mod tests {
         let (results, errs) = lexer(&mut worktable);
         assert_eq!(errs.len(), 0);
         assert_eq!(results.len(), 3);
-        assert_eq!(results[0], TokenCore::Numeric(NumericLiteral::I8Lit(128)));
-        assert_eq!(results[1], TokenCore::Numeric(NumericLiteral::I32Lit(2147483648)));
-        assert_eq!(results[2], TokenCore::Eof);
+        assert_eq!(results[0].core, TokenCore::Numeric(NumericLiteral::I8Lit(128)));
+        assert_eq!(results[1].core, TokenCore::Numeric(NumericLiteral::I32Lit(2147483648)));
+        assert_eq!(results[2].core, TokenCore::Eof);
 
     }
 
@@ -1090,7 +1099,7 @@ mod tests {
         let results = &lexer(&mut wtb("0000_")).1[0];
         assert_eq!(results.desc, LexerErrCases::NumLiteralTrailingUnderscore);
         let results = &lexer(&mut wtb("0000_i128")).0[0];  // except this trailing case is allowed
-        assert_eq!(results, &TokenCore::Numeric(NumericLiteral::I128Lit(0)));
+        assert_eq!(results.core, TokenCore::Numeric(NumericLiteral::I128Lit(0)));
 
         // wacky letters in literal
         let (results, errs) = &lexer(&mut wtb("\n\n\n\n999m99"));
@@ -1132,9 +1141,9 @@ mod tests {
         "#########################));
         //println!("{:?} \n{:?}", results, errs);
         assert_eq!(results.len(), 3);
-        assert_eq!(results[0], TokenCore::RawStrLit("lol this is raw string right here".into()));
-        assert_eq!(results[1], TokenCore::RawStrLit("lol raw string with\n            lol\n            lol\n            line \"ah-ha\"##### break".into()));
-        assert_eq!(results[2], TokenCore::Eof);
+        assert_eq!(results[0].core, TokenCore::RawStrLit("lol this is raw string right here".into()));
+        assert_eq!(results[1].core, TokenCore::RawStrLit("lol raw string with\n            lol\n            lol\n            line \"ah-ha\"##### break".into()));
+        assert_eq!(results[2].core, TokenCore::Eof);
 
         assert_eq!(errs.len(), 1);
         assert_eq!(errs[0].desc, LexerErrCases::UnfinishedRawStrLiteral);
