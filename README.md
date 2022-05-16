@@ -127,39 +127,6 @@ takes_u32(i)  // compiles since i has no bounds. at compile time, i is bound to 
 
 ![Image](NumericalLiteralSyntaxDesign.png)
 
-## Feature comparison with Rust
-
-#### Typing
-**Rust**               | **Bruh**
-:-                     | :-
-Static                 | Static
-Strong                 | Strong
-Strict                 | Strict
-Inferred               | Inferred
-Non-naked union        | Non-naked union
-**No introspection**   | **Runtime type introspection**
-struct + trait + enum  | struct + trait + enum
-impl block             | impl block
-
-#### Privacy
-**Rust**               | **Bruh**
-:-                     | :-
-mod + crate + pub      | mod + crate + pub
-
-#### Mutation and Ref
-**Rust**               | **Bruh**
-:-                     | :-
-let + let mut          | let + let mut
-**& + &mut**           |
-
-#### Runtime
-**Rust**               | **Bruh**
-:-                     | :-
-**Compiled**           | **Interpreted**
-**Machine Code**       | **bruh.vm**
-**lifetime + borrow checker** | **GCed**
-
-
 ## Similarities and Differences 
 
 ```
