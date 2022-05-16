@@ -1,6 +1,6 @@
-# BruhScript
+## BruhScript
 
-## Intentions 
+## Intentions
 
 - scripting language
 - interpreted
@@ -8,16 +8,17 @@
 - embedded language, released as a crate
 - extensible language
 - api tbd
-- author wants an embedded language but takes one look at lua and be like... lemme write my own
+- author wants an embedded language but takes one look at lua and be like… lemme write my own
 - inspired by lua
 - indexes start at 0
 - has proper dynamic array (list) and map (record) type
-- statically typed, great type inference 
+- statically typed, great type inference, i hope one day
 - variable declaration should seldom require type annotation
-- naked union type and sum type like ts
+- tagged union aka enum. no ts-style: `bool | str`
+- enum can have value attached
 - runtime type introspection
 - inspired by Wren but want integer support
-- good integer support: i128 i64 i32 i8 u128 u64 u32 u8 f64 f32 bigint
+- good integer support: `i128 i64 i32 i8 u128 u64 u32 u8 f64 f32 bigint`
 - destructuring and pattern matching
 - emulates some derive macros
   - `#[derive(Debug, PartialEq, Copy, Clone, Hash, Default)]`
@@ -36,7 +37,7 @@
   - whitespace completely irrelevant
   - fat arrow anonymous function
   - struct + trait + impl
-  - strict typing, `struct Duck(str)` can't be used in place for `struct Dack(str)`
+  - strict typing, `struct Duck(str)` can’t be used in place for `struct Dack(str)`
   - symbol qualification like rust
     - `instance.associated_function(argument)`
     - `Constructor::associated_function(argument)`
@@ -58,17 +59,22 @@ maybe we can all it BrushScript, StudentUserScript, or Lub?
 
 ## Currently
 
-- basically implementing the language with the [wren source code](https://github.com/wren-lang/wren/blob/main/src/vm/wren_compiler.c) (3c43de7) opened to the side of the IDE
+- basically implementing the language with the [wren source code](*https://github.com/wren-lang/wren/blob/main/src/vm/wren_compiler.c*) (3c43de7) opened to the side of the IDE
 - start with tree-walk, think about bytecode and stack/reg-vm later
 - not decided on a concurrency model yet, looking at how fiber works
 
 ## Wishful thinking
 
-- maybe target llvm-ir / c / js / ts / wasm also 
+- maybe target llvm-ir / c / js / ts / wasm also
+- Interpret a subset of rust code without having to change anything
+  - take a rust source, strip away `&`, `ref`, lifetime specifier
+  - add supportive library functions
+  - replace unsupported macros with whatever
+  - should be able to run in some cases :/
 
 ## Snippets
 
-```rust
+```*rust*
 // function declaration
 fn add(x: i64, y: i64) -> i64 { x + y }
 pub fn subs(x: i64, y: f64) -> f64 { x - y }
@@ -92,7 +98,7 @@ mod module {
 Most expressions in bruh has definite types.
 
 - all constructors return the corresponding class
-- all functions' return types are required to be annotated so no ambiguity
+- all functions’ return types are required to be annotated so no ambiguity
 - most literals have a clear and unambiguous type
 
 some cases where type inference is not trivial:
@@ -117,7 +123,7 @@ Strong                 | Strong
 Strict                 | Strict
 Inferred               | Inferred
 Non-naked union        | Non-naked union
-==No introspection==   | ==Runtime type introspection==
+**No introspection**   | **Runtime type introspection**
 struct + trait + enum  | struct + trait + enum
 impl block             | impl block
 
@@ -130,14 +136,14 @@ mod + crate + pub      | mod + crate + pub
 **Rust**               | **Bruh**
 :-                     | :-
 let + let mut          | let + let mut
-==& + &mut==           |
+**& + &mut**           |
 
 #### Runtime
 **Rust**               | **Bruh**
 :-                     | :-
-==Compiled==           | ==Interpreted==
-==Machine Code==       | ==bruh.vm==
-==lifetime + borrow checker== | ==GCed==
+**Compiled**           | **Interpreted**
+**Machine Code**       | **bruh.vm**
+**lifetime + borrow checker** | **GCed**
 
 
 ```
