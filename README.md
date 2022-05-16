@@ -54,6 +54,18 @@
 - `#[test]`
 - `#[should_panic]`
 
+## Type
+
+- Basically stealing rust typing wholesale
+- Function decls require full type signature, unless return type is ()
+- `!` and `?` actual types integrated with type system
+- No naked union, only enum, but enum variants first class type
+- runtime type introspection reconciles with static analysis to narrow down types at compile time, much like TS.
+  - this means enum variants can be narrowed down both at run and compile time
+- support for literal type 
+
+## Name
+
 obviously, the name is not final.
 maybe we can all it BrushScript, StudentUserScript, or Lub?
 
@@ -66,11 +78,12 @@ maybe we can all it BrushScript, StudentUserScript, or Lub?
 ## Wishful thinking
 
 - maybe target llvm-ir / c / js / ts / wasm also
-- Interpret a subset of rust code without having to change anything
+- Interpret a subset of rust code....
   - take a rust source, strip away `&`, `ref`, lifetime specifier
   - add supportive library functions
   - replace unsupported macros with whatever
-  - should be able to run in some cases :/
+  - maybe runnable in some cases :/
+  - is certainly not the design intention
 
 ## Snippets
 
@@ -81,10 +94,11 @@ pub fn subs(x: i64, y: f64) -> f64 { x - y }
 
 // module/namespace
 mod module {
-  fn private_fn() {}
-  pub fn pubic_fn() {}
+  fn private_fn() { print("private fn") }
+  pub fn pubic_fn() { print("pub fn") }
   mod test {
-    fn test_1() -> () {
+    #[test]
+    fn test_1() {
       private_fn();
       public_fn();
     }
@@ -146,17 +160,26 @@ let + let mut          | let + let mut
 **lifetime + borrow checker** | **GCed**
 
 
-```
-// rust = typing (static + strong + strict + inference) + struct (impl + trait + enum)
-// bruh = typing (static + strong + strict + inference) + struct (impl + trait + enum)
+## Similarities and Differences 
 
+```
+// [Type Ststem]
+// rust = (static + strong + strict + inference) + struct (impl + trait + enum)
+// bruh = (static + strong + strict + inference) + struct (impl + trait + enum) + enum variant as type + introspection informs static analysis
+
+// [Misc]
 // rust = privacy (mod + crate + pub) + let + let mut + & + &mut
 // bruh = privacy (mod + crate + pub) + let + let mut
 
+// [Concurrency]
 // rust = async + await + Send + Sync + thread
 // bruh = async + await + "Fiber" or whatever
 
+// [Runtime]
 // rust = compiled    + machine code + lifetime + borrow checker
-// bruh = interpreted + bruh.vm.rs   + gc
+// bruh = interpreted + bytecode vm  + gc
 
+// [String]
+// rust = Owned, borrowed, slice
+// bruh = Behaves as if is primitive
 ```
