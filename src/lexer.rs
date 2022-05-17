@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code, redundant_semicolons)]
 
 const MAX_IDENT_LENGTH: usize = 1024;
 const MAX_NUM_LITERAL_LENGTH: usize = 32768;   // A 0.25MB num literal maximum
@@ -9,9 +9,7 @@ const START_LINE: usize = 1;   // usually 1 or 0 for error message purpose
 mod helper {
 
     use std::num::ParseIntError;
-    use super::LexerErrMsg;
     use super::LexerErrCases;
-    use super::TokenCore;
 
     pub fn char_can_start_ident(char: char) -> bool {
         (char >= 'a' && char <= 'z') || char == '_' || (char >= 'A' && char <= 'Z')
@@ -436,7 +434,7 @@ pub enum StrInterpolKind {
 // So comments are not considered Tokens
 
 #[derive(Debug)]
-pub struct LexingWorktable {
+struct LexingWorktable {
     program: Vec<char>,
     index: usize,
     cur_line: usize,
@@ -449,7 +447,7 @@ pub struct LexingWorktable {
 }
 
 impl LexingWorktable {
-    pub fn new(program: Vec<char>) -> LexingWorktable {
+    fn new(program: Vec<char>) -> LexingWorktable {
         LexingWorktable {
             program,
             index: 0,
@@ -712,7 +710,7 @@ impl LexingWorktable {
     }
     fn read_hex_escape(&mut self, len: usize) -> Result<char, LexerErrMsg> {
         let mut accumulator = 0u32;
-        for i in 0..len {
+        for _ in 0..len {
             self.advance();
             let hex_digit = match self.peek() {
                 None => return Err(LexerErrMsg::new(&self, LexerErrCases::IncompleteEscapeSequence)),
@@ -744,7 +742,7 @@ impl LexingWorktable {
     // IMPLEMENTING
 }
 
-pub fn lexer_step(worktable: &mut LexingWorktable) -> Result<Token, LexerErrMsg> {
+fn lexer_step(worktable: &mut LexingWorktable) -> Result<Token, LexerErrMsg> {
     while let Some(char) = worktable.peek() {
         worktable.record_current_as_token_start();
         worktable.advance();
@@ -830,7 +828,7 @@ pub fn lexer_step(worktable: &mut LexingWorktable) -> Result<Token, LexerErrMsg>
     return Ok(worktable.add_metadata(TokenCore::Eof))
 }
 
-pub fn lexer(worktable: &mut LexingWorktable) -> (Vec<Token>, Vec<LexerErrMsg>) {
+fn lexer_internal(worktable: &mut LexingWorktable) -> (Vec<Token>, Vec<LexerErrMsg>) {
     let mut tokens: Vec<Token> = vec![];
     let mut errors: Vec<LexerErrMsg> = vec![];
     loop {
@@ -854,9 +852,16 @@ pub fn lexer(worktable: &mut LexingWorktable) -> (Vec<Token>, Vec<LexerErrMsg>) 
     (tokens, errors)
 }
 
+
+pub fn lexer(str: &str) -> (Vec<Token>, Vec<LexerErrMsg>) {
+    let mut worktable = LexingWorktable::new(str.chars().collect());
+    lexer_internal(&mut worktable)
+}
+
+
 #[cfg(test)]
 mod tests {
-    use super::{lexer, Keyword, LexingWorktable, TokenCore, last_2_are, last_3_are, last_4_are, LexerErrCases, LexerErrMsg, NumericLiteral, remove_leading_0s};
+    use super::{lexer_internal, Keyword, LexingWorktable, TokenCore, last_2_are, last_3_are, last_4_are, LexerErrCases, LexerErrMsg, NumericLiteral, remove_leading_0s};
 
     fn wtb(str: &str) -> LexingWorktable {
         return LexingWorktable::new(str.chars().collect())
@@ -864,7 +869,7 @@ mod tests {
 
     #[test]
     fn meta() {
-        let (results, err) = lexer(&mut wtb("if for var while in impl super mod pub crate loop"));
+        let (results, err) = lexer_internal(&mut wtb("if for var while in impl super mod pub crate loop"));
         println!("{:?}", results)
 
 
@@ -910,7 +915,7 @@ mod tests {
         let mut worktable = wtb(
             "(-===+= . ident..ident2 ... /* comments /* nested */ */....for)"
         );
-        let (results, errs) = lexer(&mut worktable);
+        let (results, errs) = lexer_internal(&mut worktable);
         assert_eq!(errs.len(), 0);
         assert_eq!(results.len(), 15);
         assert_eq!(results[0].core, TokenCore::OpenParen);
@@ -932,7 +937,7 @@ mod tests {
         let mut worktable = LexingWorktable::new(
             "let fn mut pub mod".chars().collect()
         );
-        let (results, err) = lexer(&mut worktable);
+        let (results, err) = lexer_internal(&mut worktable);
         assert_eq!(errs.len(), 0);
         assert_eq!(results[0].core, TokenCore::Keyword(Keyword::Let));
         assert_eq!(results[1].core, TokenCore::Keyword(Keyword::Fn));
@@ -944,7 +949,7 @@ mod tests {
             "fn add(x: i64, y: i64) -> i64 { x + y } ;;\nlet id = x: i64 -> i64 => x "
                 .chars().collect()
         );
-        let (results, errs) = lexer(&mut worktable);
+        let (results, errs) = lexer_internal(&mut worktable);
         let mut i: usize = 0;
         let mut ip = || { i+=1 ; i-1 };
         assert_eq!(errs.len(), 0);
@@ -986,7 +991,7 @@ mod tests {
         let mut worktable = wtb(
             "let x: i64 = 488285i64-535e-99 0x4294967296 4294967296"  // something random
         );
-        let (results, errs) = lexer(&mut worktable);
+        let (results, errs) = lexer_internal(&mut worktable);
         assert_eq!(errs.len(), 0);
         assert_eq!(results.len(), 11);
         assert_eq!(results[0].core, TokenCore::Keyword(Keyword::Let));
@@ -1004,7 +1009,7 @@ mod tests {
         let mut worktable = wtb(
             "5783628 0 483.535 553.0 0.0 435e3 30e0 0x425 0x0 0x000000"  // every int type (1/4)
         );
-        let (results, errs) = lexer(&mut worktable);
+        let (results, errs) = lexer_internal(&mut worktable);
         assert_eq!(errs.len(), 0);
         assert_eq!(results.len(), 11);
         assert_eq!(results[0].core, TokenCore::Numeric(NumericLiteral::ImplicitDecI("5783628".into())));
@@ -1023,7 +1028,7 @@ mod tests {
             "477924i128 0i128 i128 179074592501695641056747015895i128 48924757387452198439824u128 \
             0u128 3749257i64 0i64 47837585325u64 0u64"  // every int type (2/4)
         );
-        let (results, errs) = lexer(&mut worktable);
+        let (results, errs) = lexer_internal(&mut worktable);
         assert_eq!(errs.len(), 0);
         assert_eq!(results.len(), 11);
         assert_eq!(results[0].core, TokenCore::Numeric(NumericLiteral::I128Lit(477924)));
@@ -1041,7 +1046,7 @@ mod tests {
         let mut worktable = wtb(
             "0i32 59753989i32 0_323_994i32 0u32 48284934u32 4294967295u32"  // every int type (3/4)
         );
-        let (results, errs) = lexer(&mut worktable);
+        let (results, errs) = lexer_internal(&mut worktable);
         assert_eq!(errs.len(), 0);
         assert_eq!(results.len(), 7);
         assert_eq!(results[0].core, TokenCore::Numeric(NumericLiteral::I32Lit(0)));
@@ -1056,7 +1061,7 @@ mod tests {
             "0i8 127i8 0u8 255u8 0n 2048n 9999999999999999999999999999999999999999999999999999999999999999999999999999n \
             0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFn"  // every int type (4/4)
         );
-        let (results, errs) = lexer(&mut worktable);
+        let (results, errs) = lexer_internal(&mut worktable);
         assert_eq!(errs.len(), 0);
         assert_eq!(results.len(), 9);
         assert_eq!(results[0].core, TokenCore::Numeric(NumericLiteral::I8Lit(0)));
@@ -1072,7 +1077,7 @@ mod tests {
         let mut worktable = wtb(
             "128i8 2147483648i32"  // some edge cases
         );
-        let (results, errs) = lexer(&mut worktable);
+        let (results, errs) = lexer_internal(&mut worktable);
         assert_eq!(errs.len(), 0);
         assert_eq!(results.len(), 3);
         assert_eq!(results[0].core, TokenCore::Numeric(NumericLiteral::I8Lit(128)));
@@ -1084,29 +1089,29 @@ mod tests {
     #[test]
     fn lexer_numeric_literals_2_should_err() {
         // double underscore
-        let results = &lexer(&mut wtb("0__00")).1[0];
+        let results = &lexer_internal(&mut wtb("0__00")).1[0];
         // println!("{:?}", results);
         assert_eq!(results.desc, LexerErrCases::NumLiteralContinuousUnderscore);
-        let results = &lexer(&mut wtb("0x0__00")).1[0];
+        let results = &lexer_internal(&mut wtb("0x0__00")).1[0];
         assert_eq!(results.desc, LexerErrCases::NumLiteralContinuousUnderscore);
-        let results = &lexer(&mut wtb("0000__i128")).1[0];
+        let results = &lexer_internal(&mut wtb("0000__i128")).1[0];
         // println!("{:?}", results);
         assert_eq!(results.desc, LexerErrCases::NumLiteralContinuousUnderscore);
 
         // tailing underscore
-        let results = &lexer(&mut wtb("0000__")).1[0];
+        let results = &lexer_internal(&mut wtb("0000__")).1[0];
         assert_eq!(results.desc, LexerErrCases::NumLiteralTrailingUnderscore);
-        let results = &lexer(&mut wtb("0000_")).1[0];
+        let results = &lexer_internal(&mut wtb("0000_")).1[0];
         assert_eq!(results.desc, LexerErrCases::NumLiteralTrailingUnderscore);
-        let results = &lexer(&mut wtb("0000_i128")).0[0];  // except this trailing case is allowed
+        let results = &lexer_internal(&mut wtb("0000_i128")).0[0];  // except this trailing case is allowed
         assert_eq!(results.core, TokenCore::Numeric(NumericLiteral::I128Lit(0)));
 
         // wacky letters in literal
-        let (results, errs) = &lexer(&mut wtb("\n\n\n\n999m99"));
+        let (results, errs) = &lexer_internal(&mut wtb("\n\n\n\n999m99"));
         assert!(match errs[0].desc { LexerErrCases::ParseFloatError(_) => true, _ => false });
 
         // multiple syntax errors
-        let (results, errs) = &lexer(&mut wtb("0000__ 0xxxx 000000r"));
+        let (results, errs) = &lexer_internal(&mut wtb("0000__ 0xxxx 000000r"));
         // println!("{:?}", errs);
         assert_eq!(errs.len(), 3);
         assert_eq!(errs[0].desc, LexerErrCases::NumLiteralTrailingUnderscore);
@@ -1117,7 +1122,7 @@ mod tests {
     #[test]
     fn str_interpol() {
         // simple interpolation
-        let results = lexer(&mut wtb(r###"
+        let results = lexer_internal(&mut wtb(r###"
             `"the red ${ fox("lol", 0x77457, "fox! ${ interpol~ }") } jumped over the ${ "graphite" } dog"
             "unfinished string!!!!!!!!
         "###));
@@ -1128,7 +1133,7 @@ mod tests {
     #[test]
     fn raw_str() {
         // simple interpolation
-        let (results, errs) = lexer(&mut wtb(r#########################"
+        let (results, errs) = lexer_internal(&mut wtb(r#########################"
             r##"lol this is raw string right here"##
 
             r######"lol raw string with

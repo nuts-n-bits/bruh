@@ -1,4 +1,4 @@
-#[allow(dead_code)]
+#![allow(dead_code, redundant_semicolons)]
 
 use crate::lexer::Token;
 use crate::lexer::TokenCore;
@@ -25,25 +25,33 @@ mod ast {
 
     impl<'a> Type<'a> {
         pub fn from_vec(mut vec: Vec<Type<'a>>) -> Self {
-            if vec.len() == 0 { return Type::Unit }
+            if vec.len() == 0 {
+                Type::Unit
+            }
             else if vec.len() == 1 {  // unwraps if the 'tuple' is exactly 1 in length
                 let only_type = vec.remove(0);
-                return match only_type {
-                    Type::Never | Type::Unknown |Type::Unit => only_type,
-                    Type::Named { type_name ,params} => Type::Named { type_name, params },
+                match only_type {
+                    Type::Never | Type::Unknown | Type::Unit | Type::Named { .. } => only_type,
                     Type::Tuple(vec) => Type::from_vec(vec)
                 }
             }
             else {
-                return Type::Tuple(vec)
+                Type::Tuple(vec)
             }
         }
     }
 
     #[derive(Debug)]
     pub struct Mod<'a> {
-        pub stuff: Vec<TopLevelStuff<'a>>,
         pub visibility: Vis,
+        pub ident: &'a str,
+        pub stuff: Vec<TopLevelStuff<'a>>,
+    }
+
+    #[derive(Debug)]
+    pub struct ModPtr<'a> {
+        pub visibility: Vis,
+        pub mod_name: &'a str,
     }
 
     #[derive(Debug)]
@@ -56,6 +64,7 @@ mod ast {
     pub enum TopLevelStuff<'a> {
         FnDecl(FnDecl<'a>),
         Mod(Mod<'a>),
+        ModPtr(ModPtr<'a>),
     }
 }
 
@@ -74,6 +83,11 @@ pub enum ParserError<'a> {
     TypeNameOrOpenParenExpected                        (&'a Token),
     TypeParamListUnexpectedToken                       (&'a Token),
     TypeTupleCommaOrCloseParenExpected                 (&'a Token),
+    // Mod
+    ModUnexpectedEof                                   (&'a Token),
+    ModUnexpectedCloseBrace                            (&'a Token),
+    ModNameIdentExpected                               (&'a Token),
+    ModBodyOpenBraceExpected                           (&'a Token),
     // Eof
     UnexpectedEof                                                 ,
     UnexpectedBeginOfFile                                         ,
@@ -128,7 +142,7 @@ impl ParsingWorktable<'_> {
     fn try_consume_type(&self) -> Result<Type, ParserError> {
         let _open_paren = match self.peek()? {
             Token { core: TokenCore::OpenParen, .. } => self.advance(),  // () or (Type) or (Type, Type, ...)
-            Token { core: TokenCore::Ident(type_ident), .. }  => { return Ok(self.try_consume_one_type()?); }, // OneType
+            Token { core: TokenCore::Ident(_), .. }  => { return Ok(self.try_consume_one_type()?); }, // OneType
             Token { core: TokenCore::Bang, .. } => { self.advance() ;; return Ok(Type::Never); },  // ! type is never type
             Token { core: TokenCore::Question, .. } => { self.advance() ;; return Ok(Type::Unknown); },  // ? type is unknown type
             token => return Err(ParserError::TypeNameOrOpenParenExpected(token))
@@ -201,6 +215,8 @@ impl ParsingWorktable<'_> {
             token => return Err(ParserError::FnDeclParamListOpenParenExpected(token)),
         };
 
+        println!();
+
         let _close_paren = match self.consume()? {
             Token { core: TokenCore::CloseParen, .. } => (),
             token => return Err(ParserError::FnDeclParamListCloseParenExpected(token)),
@@ -210,8 +226,6 @@ impl ParsingWorktable<'_> {
             Token { core: TokenCore::Arrow, .. } => self.try_consume_type()?,
             _not_arrow => { self.un_advance() ;; Type::Unit }
         };
-
-        println!("{:?}", return_type);
 
         let _open_brace = match self.consume()? {
             Token { core: TokenCore::OpenBrace, .. } => (),
@@ -231,33 +245,69 @@ impl ParsingWorktable<'_> {
     }
 }
 
-
-impl ParsingWorktable {
-    fn try_consume_top_level_stuff(&mut self) -> Result<Mod, ParserError> {
+// consume: concrete mod, file
+enum EndWith { CloseBrace, Eof }
+impl ParsingWorktable<'_> {
+    fn try_consume_file<'a>(&'a self, mod_name: &'a str) -> Result<Mod<'a>, ParserError<'a>> {
         let return_point = self.get_return_point();
-        return match self._try_consume_top_level_stuff() {
+        return match self._try_consume_top_level_stuff(mod_name, EndWith::Eof, Vis::Pub) {
             Ok(mod_) => Ok(mod_),
             Err(e) => { self.return_to_point(return_point) ;; Err(e)}
         }
     }
-    fn _try_consume_top_level_stuff(&mut self) -> Result<Mod, ParserError> {
+    fn try_consume_mod(&self, vis: Vis) -> Result<TopLevelStuff, ParserError> {
+        // expects: mod_identifier {...}, with `(pub)? mod` keyword(s) already consumed
+        let return_point = self.get_return_point();
+        let mod_name = match self.consume()? {
+            Token { core: TokenCore::Ident(mod_ident), .. } => mod_ident,
+            token => return Err(ParserError::ModNameIdentExpected(token)),
+        };
+        let _consume_mod_open_brace = match self.consume()? {
+            Token { core: TokenCore::OpenBrace, .. } => (),
+            Token { core: TokenCore::Semicolon, .. } => return Ok(
+                TopLevelStuff::ModPtr(ModPtr { visibility: vis, mod_name })
+            ),
+            token => return Err(ParserError::ModBodyOpenBraceExpected(token)),
+        };
+        return match self._try_consume_top_level_stuff(mod_name, EndWith::CloseBrace, vis) {
+            Ok(mod_) => Ok(TopLevelStuff::Mod(mod_)),
+            Err(e) => { self.return_to_point(return_point) ;; Err(e)}
+        }
+    }
+    fn _try_consume_top_level_stuff<'a>(&'a self, mod_name: &'a str, end_with: EndWith, visibility: Vis) -> Result<Mod<'a>, ParserError<'a>> {
+        let mut stuff: Vec<TopLevelStuff> = vec![];
         loop {
             let cur_tok = self.consume()?;
             match cur_tok.core {
                 TokenCore::Keyword(Keyword::Pub) => {
-                    match self.consume()? {
-                        TokenCore::Keyword(Keyword::Fn) => self.try_consume_function_declaration(Vis::Pub),
+                    let tok_after_pub = self.consume()?;
+                    match tok_after_pub.core {
+                        TokenCore::Keyword(Keyword::Fn) => stuff.push(TopLevelStuff::FnDecl(self.try_consume_function_declaration(Vis::Pub)?)),
                         TokenCore::Keyword(Keyword::Struct) => todo!(),
-                        TokenCore::Keyword(Keyword::Mod) => todo!(),
+                        TokenCore::Keyword(Keyword::Mod) => stuff.push(self.try_consume_mod(Vis::Pub)?),
                         TokenCore::Keyword(Keyword::Enum) => todo!(),
                         TokenCore::Keyword(Keyword::Use) => todo!(),
+                        _ => todo!(),
                     }
                 }
-                TokenCore::Keyword(Keyword::Fn) => self.try_consume_function_declaration(Vis::Private),
+                TokenCore::Keyword(Keyword::Fn) => stuff.push(TopLevelStuff::FnDecl(self.try_consume_function_declaration(Vis::Private)?)),
                 TokenCore::Keyword(Keyword::Struct) => todo!(),
-                TokenCore::Keyword(Keyword::Mod) => todo!(),
+                TokenCore::Keyword(Keyword::Mod) => stuff.push(self.try_consume_mod(Vis::Private)?),
                 TokenCore::Keyword(Keyword::Enum) => todo!(),
                 TokenCore::Keyword(Keyword::Use) => todo!(),
+                TokenCore::Eof => {
+                    return match end_with {
+                        EndWith::Eof => Ok(Mod { ident: mod_name, stuff, visibility }),
+                        EndWith::CloseBrace => Err(ParserError::ModUnexpectedEof(cur_tok)),
+                    }
+                },
+                TokenCore::CloseBrace => {
+                    return match end_with {
+                        EndWith::Eof => Err(ParserError::ModUnexpectedCloseBrace(cur_tok)),
+                        EndWith::CloseBrace => Ok(Mod { ident: mod_name, stuff, visibility })
+                    }
+                }
+                _ => todo!(),
             }
         }
     }
@@ -273,13 +323,47 @@ mod test {
     #[test]
     fn temp() {
         let mut worktable = LexingWorktable::new(
-            " some_fn_lol () -> (Option<(str, i64, !), GenErr<str, !, ?>>, ?) {}".chars().collect()
+            "pub fn some_fn_lol () -> (Option<(str, i64, !), Triplet<str, !, ?>>, ?) {} pub fn unit () {}".chars().collect()
         );
         let (tokens, errs) = lexer(&mut worktable);
         //println!("{:?}", (&tokens, &errs));
 
         let mut worktable = ParsingWorktable::new(&tokens);
-        let fn_decl = worktable.try_consume_function_declaration(Vis::Private);
+        let fn_decl = worktable.try_consume_file("anonymous");
+        println!("{:?}", fn_decl);
+        //println!("{:?}", worktable);
+    }
+
+    #[test]
+    fn temp2() {
+        let mut worktable = LexingWorktable::new(
+            "mod outer_mod { mod inner_mod { fn inner_fn() {} }  }".chars().collect()
+        );
+        let (tokens, errs) = lexer(&mut worktable);
+        //println!("{:?}", (&tokens, &errs));
+
+        let mut worktable = ParsingWorktable::new(&tokens);
+        let fn_decl = worktable.try_consume_file("anonymous");
+        println!("{:?}", fn_decl);
+        //println!("{:?}", worktable);
+    }
+
+    #[test]
+    fn temp3() {
+        let program =
+            r########"
+
+            // mod outermod { mod innermod { fn innerfn() {} }  }
+
+            mod mod_decl;
+
+
+            "########;
+        let (tokens, errs) = lexer(program);
+        //println!("{:?}", (&tokens, &errs));
+
+        let mut worktable = ParsingWorktable::new(&tokens);
+        let fn_decl = worktable.try_consume_file("anonymous");
         println!("{:?}", fn_decl);
         //println!("{:?}", worktable);
     }
