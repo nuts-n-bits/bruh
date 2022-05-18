@@ -204,8 +204,7 @@ involved.
 file not being an entry point. In most cases, the random.js is not expecting itself to be called by the interpreter directly,
 and the call either does nothing, or it does something bad if the code is not careful.
 
-I do not agree with this. I would never want files executed where they were never meant to be directly invoked. 
-The python community figured it out a solution: with the pervasive unsightliness of `if __name__ == "__main__": main()`.
+I do not agree with this. I would never want files executed where they were never meant to be directly invoked.
 That being said, I do appreciate flexible entry points in a scripting language.
 To reconcile this, here are 2 easy rules:
 - If a file has a main fn at its top level, then this file can be used as an entry point, interpreting it will 
@@ -215,10 +214,16 @@ invoke the main fn
 With this rule, you get arbitrary entry points, but only when you intend to. I believe it's a sensible, practical and
 clean approach.
 
-> Module is Singleton
+<i>N.B. The python community has since time immemorial figured out a solution, which is responsible for the pervasive  
+unsightliness of `if __name__ == "__main__": main()`. Our above solution can be seen as exactly this, but implicitly.</i>
 
-I think this is the right approach. Implementing the singleton right is not trivial, though, see 
-[what they've done for JS](https://medium.com/@lazlojuly/are-node-js-modules-singletons-764ae97519af) and avoid that 
-at all costs.
+> Module being Singleton with top level variables
+
+I think this is the right approach. Modules need some sort of persistence to be useful. Having top level `let` statements
+is imho better than static variables. Since bruh is interpreted, top level `let`s are more expressive than rust, since 
+it can call arbitrary functions.
+
+N.B. that implementing the singleton right is not trivial, though, see 
+[what they've done for JS](https://medium.com/@lazlojuly/are-node-js-modules-singletons-764ae97519af)
 
 ////////////////////////////////////////////////////////////////////////////////
