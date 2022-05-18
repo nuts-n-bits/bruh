@@ -190,7 +190,7 @@ and it won't impact you unless you decide to use it. (or maintain code that uses
 
 3. So I've devised a way that let you do just that, a cross-file `pub(super)` feature. I'll explain it in a later section.
 
-### Some expectations to be met, being a "scripting language"
+## Some expectations to be met, being a "scripting language"
 
 > Files should be plug-and-play. If you replace a file with another, and their exports look the same, 
 > and the imports aren't broken, it should work. (This is emphatically not true with rust!)
@@ -198,23 +198,27 @@ and it won't impact you unless you decide to use it. (or maintain code that uses
 I want this expectation to be met for the most part, the one exception is when the cross-file `pub(super)` feature is 
 involved.
 
-> Top-level code execution
-
-I do not agree with this. It leads to the pervasive unsightliness of `if __name__ == "__main__": main()` in python.
-In bruh, every file is just a namespace that exports functions, structs and enums. A main file just exports a function
-named `main`. However, you will see in the next paragraph that disallowing it is not limiting at all.
-
 > Arbitrary entry-point
 > 
 > So this just means you can `node src/path/to/deep/folder/random.js` and the interpreter won't complain about the random
 file not being an entry point. In most cases, the random.js is not expecting itself to be called by the interpreter directly,
 and the call either does nothing, or it does something bad if the code is not careful.
 
-I do want flexible entry points, but I also don't want files executed where they were never meant to be directly invoked. 
+I do not agree with this. I would never want files executed where they were never meant to be directly invoked. 
+The python community figured it out a solution: with the pervasive unsightliness of `if __name__ == "__main__": main()`.
+That being said, I do appreciate flexible entry points in a scripting language.
 To reconcile this, here are 2 easy rules:
 - If a file has a main fn at its top level, then this file can be used as an entry point, interpreting it will 
 invoke the main fn
 - If otherwise, the file is a library and cannot be invoked directly. 
 
-I with this rule, you get arbitrary entry points, but only when you intend to. I believe it's a sensible, practical and
+With this rule, you get arbitrary entry points, but only when you intend to. I believe it's a sensible, practical and
 clean approach.
+
+> Module is Singleton
+
+I think this is the right approach. Implementing the singleton right is not trivial, though, see 
+[what they've done for JS](https://medium.com/@lazlojuly/are-node-js-modules-singletons-764ae97519af) and avoid that 
+at all costs.
+
+////////////////////////////////////////////////////////////////////////////////
