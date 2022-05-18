@@ -130,9 +130,9 @@ takes_u32(i)  // compiles since i has no bounds. at compile time, i is bound to 
 // rust = (static + strong + strict + inference) + struct (impl + trait + enum)
 // bruh = (static + strong + strict + inference) + struct (impl + trait + enum) + enum variant as type + introspection informs static analysis
 
-// [Misc]
-// rust = privacy (mod + crate + pub) + let + let mut + & + &mut
-// bruh = privacy (mod + crate + pub) + let + let mut
+// [Ownership and reference]
+// rust = let + let mut + & + &mut
+// bruh = let + let mut
 
 // [Concurrency]
 // rust = async + await + Send + Sync + thread
@@ -145,4 +145,49 @@ takes_u32(i)  // compiles since i has no bounds. at compile time, i is bound to 
 // [String]
 // rust = Owned, borrowed, slice
 // bruh = Behaves as if is primitive
+
+// [Module and Visibility
+// rust = mod + use + pub(self/crate/super/in...)
+// bruh = namespace (`ns`) + import (`use`) + export (`pub`) closely mirroring JS/TS 
 ```
+
+## Module and Visibility
+
+This aspect of the language is profoundly important for structured projects, 
+so it deserves careful thoughts and detailed elaboration.
+
+### Considering Rust's mod/pub approach
+
+At first rust's privacy model looked like its simple yet powerful. Upon closer inspection, 
+powerful it is indeed, but there is actually a ton of subtle behaviours and rules. [This](
+https://www.sheshbabu.com/posts/rust-module-system/) is a good read.
+
+Though complicated, it is almost uniquely powerful in that it allows for a certain region of implementation detail to be 
+completely hidden from other parts of the language, while still allowing those impls to split across files. 
+This can't be done in, say, TS. In TS, if you split code across files, some of them must be made public with 
+`export function public_interface()` to be useful. But once you do that, another file from across the street can import it,
+meaning it is public to the whole project. So you can't for example have a folder of files that is only visible to the parent.
+(Not a blow against TS, other languages like python, cpp, ruby etc has even worse encapsulation than TS)
+
+With rust, there is `pub(super)` and `pub(in path::to::parent)`, exposing the impl detail only to the scope where it's needed.
+However, I decided against adopting this powerful solution, and instead went with something similar to TS.  
+And I document my reasoning below.
+
+1. To adopt rust's mod system, a hierarchy must be established amongst source files. A root (crate) must exist,
+and each module resides on a node on the module tree down from the root. Only then is it meaningful to refer to 
+`super` and `parent` and `submodule`. Bruh being a scripting language does not want this. 
+Bruh wants all source files to simply be blobs of text that encode some AST. Exactly where the AST happens to locate on the
+filesystem should be transparent to both the {caller, importer, user} and the {callee, exporter, lib}.
+Because of this flatness, 'parent' and 'descendant' don't exist so `pub(super)` wouldn't make sense.
+
+2. Being able to encapsulate across multiple files and expose them to the exact scope needed, like rust allows you to, 
+is an advanced feature. Small amounts of people will need this feature, and don't get me wrong, it's really, 
+really nice to have this feature! I would hate it if my language couldn't do that. 
+But I think it's a reasonable thing to say, let's make everyday module interactions stupidly simple like they have in TS,
+So nothing surprising and very easy to learn without having to look at documentation. When you do need the feature, you 
+look at the docs, and you learn that the feature exists, in a logical, syntactically consistent way,
+and it won't impact you unless you decide to use it. (or maintain code that uses it).
+
+3. So I've devised a way that let you do just that, a cross-file `pub(super)` feature. I'll explain it in a later section.
+
+
