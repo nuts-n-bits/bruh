@@ -24,31 +24,31 @@
   - `#[derive(Debug, PartialEq, Copy, Clone, Hash, Default)]`
 - GCed
 - parametric polymorphism
+- structs, enums, traits, functions, impls.
 - syntax influenced by c, rust, js, ts, swift
   - function call = function name + parentheses
   - list items separated by commas
   - lexical scope with braces
   - implicit return
   - variable shadowing like rust
-  - semicolon: require to separate expressions
-  - basically everything is expression
-    - declaration, assignment and mutation expressions return unit value `()`
+  - semicolon: required to separate expressions
   - newline treated as whitespace
-  - whitespace completely irrelevant
+  - whitespace syntactically irrelevant
   - fat arrow anonymous function
-  - struct + trait + impl
-  - strict typing, `struct Duck(str)` can’t be used in place for `struct Dack(str)`
   - symbol qualification like rust
-    - `instance.associated_function(argument)`
-    - `Constructor::associated_function(argument)`
-    - `path::to::module::ClassConstructor::associated_function(argument)`
-  - functions always require type signature annotations
+    - `structure.associated_function(argument)`
+    - `Structure::associated_function(argument)`
+    - `path::to::module::public_function(argument)`
   - block comments can nest
-  - unit-testing included - also like rust
-  - standard library implements functional programming primitives (functor applicative monad etc.)
   - no function overloading, no variadic
-- `#[test]`
-- `#[should_panic]`
+- unit-testing included - also like rust
+  - `#[test]`
+  - `#[should_panic]`
+- functions always require type signature annotations
+- strict typing, `struct Duck(str)` can’t be used in place for `struct Dack(str)`
+- standard library implements functional programming primitives (functor applicative monad etc.)
+- basically everything is expression
+  - declaration, assignment and mutation expressions return unit value `()`
 
 ## Type
 
