@@ -215,7 +215,11 @@ impl ParsingWorktable<'_> {
             token => return Err(ParserError::FnDeclParamListOpenParenExpected(token)),
         };
 
-        println!();
+        println!("starting to read parameter list");
+
+        //let mut param_list: Vec<Param> = vec![];
+
+        println!("done reading parameter list");
 
         let _close_paren = match self.consume()? {
             Token { core: TokenCore::CloseParen, .. } => (),

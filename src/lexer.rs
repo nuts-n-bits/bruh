@@ -153,7 +153,6 @@ pub enum Keyword {
     Pub,          //  pub
     Mod,          //  mod
     Use,          //  use
-    Class,        //  class
     Struct,       //  struct
     Enum,         //  enum
     If,           //  if
@@ -173,9 +172,9 @@ pub enum Keyword {
     In,           //  in
     Impl,         //  impl
     Super,        //  super
-    Crate,        //  crate
     Self_,        //  self
     As,           //  as
+    Private,      //  privateq
 }
 
 impl Keyword {
