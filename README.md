@@ -1,4 +1,4 @@
-## BruhScript
+# BruhScript
 
 ## Intentions
 
@@ -93,30 +93,31 @@ Because we're heavily influenced by rust, similarities abound
 ```
 // [Type Ststem]
 // rust = (static + strong + strict + inference) + struct (impl + trait + enum)
-// bruh = (static + strong + strict + inference) + struct (impl + trait + enum) + enum variant as type + introspection informs static analysis
+// bruh = (static + strong + strict + inference) + struct (impl + trait + enum) 
+          + enum variant as type + introspection informs static analysis
 
-// [Ownership and reference]
-// rust = let + let mut + & + &mut
-// bruh = let + let mut
+// [Ownership and Reference]
+// rust = let + let mut + & + &mut + lifetime
+// bruh = let + let mut + GC
 
 // [Concurrency]
-// rust = async + await + Send + Sync + thread
-// bruh = async + await + "Fiber" or whatever
+// rust = async + await + static analysis (Send + Sync + Multithreading primitives)
+// bruh = async + await + single thread + cooperative multitasking
 
 // [Runtime]
-// rust = compiled    + machine code + lifetime + borrow checker
+// rust = compiled    + machine code + static free guarantees (lifetime + borrow checker)
 // bruh = interpreted + bytecode vm  + gc
 
 // [String]
 // rust = Owned, borrowed, slice
 // bruh = Behaves as if is primitive
 
-// [Module and Visibility
+// [Module and Encapsulation]
 // rust = mod + use + pub(self/crate/super/in...)
 // bruh = namespace (`ns`) + import (`use`) + export (`pub`) closely mirroring JS/TS 
 ```
 
-## Module and Visibility
+## Module and Visibility 
 
 This aspect of the language is profoundly important for structured projects, 
 so it deserves careful thoughts and detailed elaboration.
