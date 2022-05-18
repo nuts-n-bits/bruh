@@ -48,7 +48,8 @@
 - strict typing, `struct Duck(str)` can’t be used in place for `struct Dack(str)`
 - standard library implements functional programming primitives (functor applicative monad etc.)
 - basically everything is expression
-  - declaration, assignment and mutation expressions return unit value `()`
+  - declaration, assignment and mutation expressions evaluates to unit value `()`
+  - block expression evaluates to the value of its last sub-expression
 
 ## Type
 
@@ -81,49 +82,13 @@ maybe we can all it BrushScript, StudentUserScript, or Lub?
   - maybe runnable in some cases :/
   - is certainly not the design intention
 
-## Snippets
-
-```*rust*
-// function declaration
-fn add(x: i64, y: i64) -> i64 { x + y }
-pub fn subs(x: i64, y: f64) -> f64 { x - y }
-
-// module/namespace
-mod module {
-  fn private_fn() { print("private fn") }
-  pub fn pubic_fn() { print("pub fn") }
-  mod test {
-    #[test]
-    fn test_1() {
-      private_fn();
-      public_fn();
-    }
-  }
-}
-
-```
-
-## Type annotation and inference
-
-Most expressions in bruh has definite types.
-
-- all constructors return the corresponding class
-- all functions’ return types are required to be annotated so no ambiguity
-- most literals have a clear and unambiguous type
-
-some cases where type inference is not trivial:
-
-```
-let i = 0  // defaults to i64 if not annotated
-fn takes_u32(x: u32) {}
-takes_u32(i)  // compiles since i has no bounds. at compile time, i is bound to i32.
-```
-
 ## Numerical literal syntax
 
 ![Image](NumericalLiteralSyntaxDesign.png)
 
-## Similarities and Differences 
+## Similarities and Differences with host language Rust
+
+Because we're heavily influenced by rust, similarities abound
 
 ```
 // [Type Ststem]
