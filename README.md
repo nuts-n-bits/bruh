@@ -90,28 +90,27 @@ maybe we can all it BrushScript, StudentUserScript, or Lub?
 
 Because we're heavily influenced by rust, similarities abound
 
-```
-// [Type Ststem]
+```zig
+// [Type System]
 // rust = (static + strong + strict + inference) + struct (impl + trait + enum)
 // bruh = (static + strong + strict + inference) + struct (impl + trait + enum) 
-          + enum variant as type + introspection informs static analysis
-
+//        + enum variant as type + introspection informs static analysis
 // [Ownership and Reference]
 // rust = let + let mut + & + &mut + lifetime
 // bruh = let + let mut + GC
-
+//
 // [Concurrency]
 // rust = async + await + static analysis (Send + Sync + Multithreading primitives)
 // bruh = async + await + single thread + cooperative multitasking
-
+//
 // [Runtime]
 // rust = compiled    + machine code + static free guarantees (lifetime + borrow checker)
 // bruh = interpreted + bytecode vm  + gc
-
+//
 // [String]
 // rust = Owned, borrowed, slice
 // bruh = Behaves as if is primitive
-
+//
 // [Module and Encapsulation]
 // rust = mod + use + pub(self/crate/super/in...)
 // bruh = namespace (`ns`) + import (`use`) + export (`pub`) closely mirroring JS/TS 

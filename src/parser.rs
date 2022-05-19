@@ -20,6 +20,7 @@ mod ast {
         Never,
         Unknown,
         Named { type_name: &'a str, params: Vec<Type<'a>> },
+        Bracket(Box<Type<'a>>),
         Tuple(Vec<Type<'a>>),
     }
 
@@ -31,7 +32,7 @@ mod ast {
             else if vec.len() == 1 {  // unwraps if the 'tuple' is exactly 1 in length
                 let only_type = vec.remove(0);
                 match only_type {
-                    Type::Never | Type::Unknown | Type::Unit | Type::Named { .. } => only_type,
+                    Type::Never | Type::Unknown | Type::Unit | Type::Named { .. } | Type::Bracket(..) => only_type,
                     Type::Tuple(vec) => Type::from_vec(vec)
                 }
             }
@@ -78,11 +79,10 @@ pub enum ParserError<'a> {
     FnDeclBodyOpenBraceExpected                        (&'a Token),
     FnDeclBodyCloseBraceExpected                       (&'a Token),
     // Type
-    TypeNameIdentExpected                              (&'a Token),
-    TypeDidNotDeParenthesizeBeforeTryingConsumeOneType (&'a Token),
-    TypeNameOrOpenParenExpected                        (&'a Token),
+    TypeExpected                                       (&'a Token),
     TypeParamListUnexpectedToken                       (&'a Token),
     TypeTupleCommaOrCloseParenExpected                 (&'a Token),
+    TypeCloseBracketExpected                           (&'a Token),
     // Mod
     ModUnexpectedEof                                   (&'a Token),
     ModUnexpectedCloseBrace                            (&'a Token),
@@ -142,10 +142,11 @@ impl ParsingWorktable<'_> {
     fn try_consume_type(&self) -> Result<Type, ParserError> {
         let _open_paren = match self.peek()? {
             Token { core: TokenCore::OpenParen, .. } => self.advance(),  // () or (Type) or (Type, Type, ...)
-            Token { core: TokenCore::Ident(_), .. }  => { return Ok(self.try_consume_one_type()?); }, // OneType
+            Token { core: TokenCore::Ident(id), .. }  => { self.advance() ;; return self.try_consume_one_type(id) }, // OneType
+            Token { core: TokenCore::OpenBracket, .. } => { self.advance() ;; return self.try_consume_bracket_type() }  // [Type]
             Token { core: TokenCore::Bang, .. } => { self.advance() ;; return Ok(Type::Never); },  // ! type is never type
             Token { core: TokenCore::Question, .. } => { self.advance() ;; return Ok(Type::Unknown); },  // ? type is unknown type
-            token => return Err(ParserError::TypeNameOrOpenParenExpected(token))
+            token => return Err(ParserError::TypeExpected(token))
         };  // if seen open paren, continue, expect (), (Type), (Type, Type, ...)
         let mut tuple_list: Vec<Type> = vec![];
         let _unreachable = loop {
@@ -158,26 +159,25 @@ impl ParsingWorktable<'_> {
         };
     }
 
-    /** Only call after having de-parenthesized the type expression */
-    fn try_consume_one_type(&self) -> Result<Type, ParserError> {
+    fn try_consume_bracket_type(&self) -> Result<Type, ParserError> {
         let return_point = self.get_return_point();
-        match self._try_consume_one_type() {
+        let type_within = self.try_consume_type()?;
+        let close_bracket = match self.consume()? {
+            Token { core: TokenCore::CloseBracket, .. } => ( /* Keep going */ ),
+            token => { self.return_to_point(return_point) ;; return Err(ParserError::TypeCloseBracketExpected(&token)) }
+        };
+        return Ok(Type::Bracket(Box::new(type_within)))
+    }
+
+    /** Only call after having de-parenthesized the type expression */
+    fn try_consume_one_type<'a>(&'a self, type_ident: &'a str) -> Result<Type<'a>, ParserError<'a>> {
+        let return_point = self.get_return_point();
+        match self._try_consume_one_type(type_ident) {
             Ok(one_type) => Ok(one_type),
             Err(err) => { self.return_to_point(return_point) ;; Err(err) }
         }
     }
-    fn _try_consume_one_type(&self) -> Result<Type, ParserError> {
-        let type_ident = match self.consume()? {
-            Token { core: TokenCore::Ident(type_ident), .. } => { type_ident }
-            token => {
-                return match token.core {
-                    TokenCore::OpenParen => Err(
-                        ParserError::TypeDidNotDeParenthesizeBeforeTryingConsumeOneType(token)
-                    ),
-                    _ => Err(ParserError::TypeNameIdentExpected(token)),
-                }
-            }
-        };
+    fn _try_consume_one_type<'a>(&'a self, type_ident: &'a str) -> Result<Type<'a>, ParserError<'a>> {
         let _open_angle_bracket = match self.peek()? {
             Token { core: TokenCore::Lt, .. } => { self.advance() }
             _not_lt => return Ok(Type::Named { type_name: type_ident, params: vec![] })

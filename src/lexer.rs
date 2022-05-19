@@ -147,68 +147,61 @@ impl LexerErrMsg {
 
 #[derive(Debug, PartialEq)]
 pub enum Keyword {
-    Fn,           //  fn
-    Let,          //  let
-    Mut,          //  mut
-    Pub,          //  pub
-    Mod,          //  mod
-    Use,          //  use
-    Struct,       //  struct
-    Enum,         //  enum
-    If,           //  if
-    Else,         //  else
-    Return,       //  return
-    Continue,     //  continue
-    Break,        //  break
-    For,          //  for
-    While,        //  while
-    Loop,         //  loop
-    Yield,        //  yield
+    As,           //  as
     Async,        //  async
     Await,        //  await
-    True,         //  true
-    False,        //  false
-    Null,         //  null
-    In,           //  in
+    Break,        //  break
+    Continue,     //  continue
+    Else,         //  else
+    Enum,         //  enum
+    Fn,           //  fn
+    For,          //  for
+    If,           //  if
     Impl,         //  impl
-    Super,        //  super
+    In,           //  in
+    Let,          //  let
+    Loop,         //  loop
+    Mod,          //  mod
+    Mut,          //  mut
+    Private,      //  private
+    Pub,          //  pub
+    Return,       //  return
     Self_,        //  self
-    As,           //  as
-    Private,      //  privateq
+    Struct,       //  struct
+    Type,         //  type
+    Use,          //  use
+    While,        //  while
+    Yield,        //  yield
 }
 
 impl Keyword {
     fn from_str(str: &str) -> Option<Keyword> {
         return match str {
-            "fn"       => Some(Keyword::Fn),
-            "let"      => Some(Keyword::Let),
-            "mut"      => Some(Keyword::Mut),
-            "pub"      => Some(Keyword::Pub),
-            "mod"      => Some(Keyword::Mod),
-            "use"      => Some(Keyword::Use),
-            "class"    => Some(Keyword::Class),
-            "struct"   => Some(Keyword::Struct),
-            "enum"     => Some(Keyword::Enum),
-            "if"       => Some(Keyword::If),
-            "else"     => Some(Keyword::Else),
-            "return"   => Some(Keyword::Return),
-            "continue" => Some(Keyword::Continue),
-            "break"    => Some(Keyword::Break),
-            "for"      => Some(Keyword::For),
-            "while"    => Some(Keyword::While),
-            "loop"     => Some(Keyword::Loop),
-            "yield"    => Some(Keyword::Yield),
+            "as"       => Some(Keyword::As),
             "async"    => Some(Keyword::Async),
             "await"    => Some(Keyword::Await),
-            "true"     => Some(Keyword::True),
-            "false"    => Some(Keyword::False),
-            "null"     => Some(Keyword::Null),
-            "in"       => Some(Keyword::In),
+            "break"    => Some(Keyword::Break),
+            "continue" => Some(Keyword::Continue),
+            "else"     => Some(Keyword::Else),
+            "enum"     => Some(Keyword::Enum),
+            "fn"       => Some(Keyword::Fn),
+            "for"      => Some(Keyword::For),
+            "if"       => Some(Keyword::If),
             "impl"     => Some(Keyword::Impl),
-            "super"    => Some(Keyword::Super),
-            "crate"    => Some(Keyword::Crate),
+            "in"       => Some(Keyword::In),
+            "let"      => Some(Keyword::Let),
+            "loop"     => Some(Keyword::Loop),
+            "mod"      => Some(Keyword::Mod),
+            "mut"      => Some(Keyword::Mut),
+            "private"  => Some(Keyword::Private),
+            "pub"      => Some(Keyword::Pub),
+            "return"   => Some(Keyword::Return),
             "self"     => Some(Keyword::Self_),
-            "as"       => Some(Keyword::As),
+            "struct"   => Some(Keyword::Struct),
+            "type"     => Some(Keyword::Type),
+            "use"      => Some(Keyword::Use),
+            "while"    => Some(Keyword::While),
+            "yield"    => Some(Keyword::Yield),
             _          => None,
         }
 
