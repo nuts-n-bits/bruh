@@ -1,19 +1,28 @@
 #![allow(unused_imports)]
 
-extern crate core;
-
 mod lexer;
 mod parser;
 mod bruh;
 
-use lexer::lexer;
-
 fn main() {
 
-    let mut tuple_0 = ();
-    let mut tuple_1 = (0i64, );
-    let mut tuple_2 = (0i64, 0i64);
-
-    let mut tuple_1_lol: (i64, ) = tuple_1;
 }
 
+
+
+
+/*
+
+
+print -> os::io::write
+println -> os::io::write
+eprint -> os::io::write
+eprintln -> os::io::write
+max -> core::sugar::max
+min -> core::sugar::min
+
+
+
+
+
+*/

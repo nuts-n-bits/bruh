@@ -119,10 +119,12 @@ pub enum LexerErrCases {
     UnfinishedRawStrLiteral,
     InvalidCharInRawStrDelimitation(char),
     InvalidEscapeChar(char),
+    InvalidCharLiteral,
     InvalidEscapeAtEof,
     IncompleteEscapeSequence,
     InvalidHexEscapeSequence,
     InvalidHexEscapeVal,
+    InvalidLabelName(String),
     UnexpectedCharacter(char),
 }
 
@@ -152,6 +154,7 @@ pub enum Keyword {
     Await,        //  await
     Break,        //  break
     Continue,     //  continue
+    Crate,        //  crate
     Else,         //  else
     Enum,         //  enum
     Fn,           //  fn
@@ -168,6 +171,7 @@ pub enum Keyword {
     Return,       //  return
     Self_,        //  self
     Struct,       //  struct
+    Super,        //  super
     Type,         //  type
     Use,          //  use
     While,        //  while
@@ -364,8 +368,8 @@ pub enum TokenCore {
     CloseParen,                //  )
     OpenBracket,               //  [
     CloseBracket,              //  ]
-    OpenBrace,                 //  {
-    CloseBrace,                //  }
+    OpenCurly,                 //  {
+    CloseCurly,                //  }
     Colon,                     //  :
     ColonColon,                //  ::
     Bang,                      //  !
@@ -398,6 +402,7 @@ pub enum TokenCore {
     Hash,                      //  #
                                //
     Ident(String),             //  any valid identifier
+    AposIdent(String),         //  any valid identifier prefixed with an apostrophe. e.g. 'label
                                //
     StrInterpol(               //  "a ${expr} b"  =>  StrInterpol("a ", 0, Start) + Expr + StrInterpol(" b", 0, End)
         String,                //
@@ -406,6 +411,7 @@ pub enum TokenCore {
     ),                         //
     StrLit(String),            //  "string"
     RawStrLit(String),         //  r#####"string"#####
+    Char(char),                //  'b' '\xFF' '\uBABE' '\UCAFEBABE'
                                //
     Numeric(NumericLiteral),   //  0 0e0 0.0 0i32
                                //
@@ -575,7 +581,12 @@ impl LexingWorktable {
     }
 
     fn consume_ident(&mut self, first_char: char) -> Result<Token, LexerErrMsg> {
-        let mut chars = vec![first_char];
+        self._consume_ident_core(vec![first_char], false)
+    }
+    fn consume_apos_ident(&mut self) -> Result<Token, LexerErrMsg> {
+        self._consume_ident_core(vec![], true)
+    }
+    fn _consume_ident_core(&mut self, mut chars: Vec<char>, apos: bool) -> Result<Token, LexerErrMsg> {
         while let Some(char) = self.peek() {
             if !char_can_cont_ident(char) { break }
             chars.push(char);
@@ -584,11 +595,12 @@ impl LexingWorktable {
                 return Err(LexerErrMsg::new(&self, LexerErrCases::IdentOverMaxLength))
             }
         }
-        let possible_ident: String = chars.into_iter().collect();
-        if let Some(keyword) = Keyword::from_str(&possible_ident) {
-            Ok(self.add_metadata(TokenCore::Keyword(keyword)))
-        } else {
-            Ok(self.add_metadata(TokenCore::Ident(possible_ident)))
+        let ident_or_keyword: String = chars.into_iter().collect();
+        match (Keyword::from_str(&ident_or_keyword), apos) {
+            (Some(_keyword), true) => Err(LexerErrMsg::new(&self, LexerErrCases::InvalidLabelName(ident_or_keyword))),
+            (Some(keyword), false) => Ok(self.add_metadata(TokenCore::Keyword(keyword))),
+            (None, true) => Ok(self.add_metadata(TokenCore::AposIdent(ident_or_keyword))),
+            (None, false) => Ok(self.add_metadata(TokenCore::Ident(ident_or_keyword))),
         }
     }
 
@@ -625,30 +637,7 @@ impl LexingWorktable {
                 )));
             }
             else if char == '\\' {
-                let esc = self.peek();
-                self.advance();
-                match esc {
-                    Some('"') => chars.push('"'),
-                    Some('\'') => chars.push('\''),
-                    Some('\\') => chars.push('\\'),
-                    Some('$') => chars.push('$'),
-                    Some('0') => chars.push('\0'),
-                    // Some('a') => chars.push(0x07 as char),  // '\a' "Alert"
-                    // Some('b') => chars.push(0x08 as char),  // '\b' "Backspace"
-                    // Some('e') => chars.push(0x1B as char),  // '\e' <escape>
-                    // Some('f') => chars.push(0x0C as char),  // '\f' "Form-feed page-break"
-                    // !! Since rust has deprecated the above escape sequences I think bruh should too
-                    Some('n') => chars.push('\n'),
-                    Some('r') => chars.push('\r'),
-                    Some('t') => chars.push('\t'),
-                    Some('x') => chars.push(self.read_hex_escape(2)?),
-                    Some('u') => chars.push(self.read_unicode_escape(4)?),
-                    Some('U') => chars.push(self.read_unicode_escape(8)?),
-                    Some(ch) => return Err(
-                        LexerErrMsg::new(&self, LexerErrCases::InvalidEscapeChar(ch))
-                    ),
-                    None => return Err(LexerErrMsg::new(&self, LexerErrCases::InvalidEscapeAtEof))
-                }
+                chars.push(self.consume_escape_sequence()?);
             }
             else {
                 chars.push(char)
@@ -657,16 +646,32 @@ impl LexingWorktable {
         return Err(LexerErrMsg::new(&self, LexerErrCases::UnfinishedStrLiteral))
     }
 
+    fn consume_escape_sequence(&mut self) -> Result<char, LexerErrMsg> {
+        let esc = self.consume();
+        return Ok(match esc {
+            Some('"') => '"',
+            Some('\'') => '\'',
+            Some('\\') => '\\',
+            Some('$') => '$',
+            Some('0') => '\0',
+            Some('n') => '\n',
+            Some('r') => '\r',
+            Some('t') => '\t',
+            // Some('a') => 0x07 as char,  // '\a' "Alert"
+            // Some('b') => 0x08 as char,  // '\b' "Backspace"
+            // Some('e') => 0x1B as char,  // '\e' <escape>
+            // Some('f') => 0x0C as char,  // '\f' "Form-feed page-break"
+            // !! Since rust has deprecated the above escape sequences I think bruh should too
+            Some('x') => self.read_hex_escape(2)?,
+            Some('u') => self.read_unicode_escape(4)?,
+            Some('U') => self.read_unicode_escape(8)?,
+            Some(ch) => return Err(
+                LexerErrMsg::new(&self, LexerErrCases::InvalidEscapeChar(ch))
+            ),
+            None => return Err(LexerErrMsg::new(&self, LexerErrCases::InvalidEscapeAtEof))
+        })
+    }
 
-
-
-    // IMPLEMENTING
-    // IMPLEMENTING
-    // IMPLEMENTING
-    // IMPLEMENTING
-    // IMPLEMENTING
-    // IMPLEMENTING
-    // IMPLEMENTING
     fn consume_raw_str_literal(&mut self) -> Result<Token, LexerErrMsg> {
         let mut hash_count_begin = 0usize;  // remember, the first hash is not consumed by the lexer
         let mut collected: Vec<char> = vec![];
@@ -700,6 +705,14 @@ impl LexingWorktable {
         }
         // unreachable
     }
+
+    // IMPLEMENTING
+    // IMPLEMENTING
+    // IMPLEMENTING
+    // IMPLEMENTING
+    // IMPLEMENTING
+    // IMPLEMENTING
+    // IMPLEMENTING
     fn read_hex_escape(&mut self, len: usize) -> Result<char, LexerErrMsg> {
         let mut accumulator = 0u32;
         for _ in 0..len {
@@ -748,7 +761,7 @@ fn lexer_step(worktable: &mut LexingWorktable) -> Result<Token, LexerErrMsg> {
                     worktable.cur_interpol_open_braces[worktable.str_interpolation_depth - 1] += 1;
                 }
                 else {
-                    return Ok(worktable.add_metadata(TokenCore::OpenBrace))
+                    return Ok(worktable.add_metadata(TokenCore::OpenCurly))
                 }
             },
             '}' => {
@@ -763,20 +776,17 @@ fn lexer_step(worktable: &mut LexingWorktable) -> Result<Token, LexerErrMsg> {
                     }
                 }
                 else {
-                    return Ok(worktable.add_metadata(TokenCore::CloseBrace))
+                    return Ok(worktable.add_metadata(TokenCore::CloseCurly))
                 }
             },
             ':' => return Ok(worktable.resolve_2ch_token(':', TokenCore::ColonColon, TokenCore::Colon)),
             '!' => return Ok(worktable.resolve_2ch_token('=', TokenCore::BangEq, TokenCore::Bang)),
             '?' => return Ok(worktable.add_metadata(TokenCore::Question)),
             ',' => return Ok(worktable.add_metadata(TokenCore::Comma)),
-            '/' => if worktable.peek() == Some('/') {
-                worktable.skip_line_comment();
-                continue;
-            } else if worktable.peek() == Some('*') {
-                worktable.skip_block_comment()?
-            } else {
-                return Ok(worktable.add_metadata(TokenCore::Slash))
+            '/' => match worktable.peek() {
+                Some('/') => { worktable.skip_line_comment() ; continue },
+                Some('*') => { worktable.skip_block_comment()? ; continue },
+                _ => return Ok(worktable.add_metadata(TokenCore::Slash))
             }
             '*' => return Ok(worktable.resolve_2ch_token('*', TokenCore::StarStar, TokenCore::Star)),
             '-' => return if worktable.peek() == Some('>') {
@@ -801,15 +811,30 @@ fn lexer_step(worktable: &mut LexingWorktable) -> Result<Token, LexerErrMsg> {
             '<' => return Ok(worktable.resolve_2ch_token('=', TokenCore::LtEq, TokenCore::Lt)),
             '#' => return Ok(worktable.add_metadata(TokenCore::Hash)),
             ' ' | '\t' | '\n' | '\r' => worktable.skip_whitespace(),
-            '"' => return Ok(worktable.consume_str_literal()?),
+            '"' => return worktable.consume_str_literal(),
+            '\'' => {
+                return match (worktable.peek()?, worktable.peek_next(), char_can_start_ident(worktable.peek()?)) {
+                    (ch, Some('\''), _) => { worktable.advance_x(2); Ok(worktable.add_metadata(TokenCore::Char(ch))) },
+                    (_ident_char, _not_apos_again, true) => { worktable.consume_apos_ident() }
+                    ('\\', Some(not_eof), _) => {
+                        worktable.advance();  // go past '\\'
+                        let char = worktable.consume_escape_sequence()?;
+                        match worktable.consume() {
+                            Some('\'') => Ok(worktable.add_metadata(TokenCore::Char(char))),
+                            _ => Err(LexerErrMsg::new(&worktable, LexerErrCases::InvalidCharLiteral)),
+                        }
+                    }
+                    _ => Err(LexerErrMsg::new(&worktable, LexerErrCases::InvalidCharLiteral)),
+                }
+            }
             _ => {
                 return if char == 'r' && worktable.peek() == Some('#') {
-                    Ok(worktable.consume_raw_str_literal()?)
+                    worktable.consume_raw_str_literal()
                 }
                 else if char_can_start_ident(char) {
-                    Ok(worktable.consume_ident(char)?)
+                    worktable.consume_ident(char)
                 } else if char_can_start_num(char) {
-                    Ok(worktable.consume_possible_numeric_literal(char)?)
+                    worktable.consume_possible_numeric_literal(char)
                 } else {
                     Err(LexerErrMsg::new(&worktable, LexerErrCases::UnexpectedCharacter(char)))
                 }
@@ -959,11 +984,11 @@ mod tests {
         assert_eq!(results[ip()].core, TokenCore::CloseParen);
         assert_eq!(results[ip()].core, TokenCore::Arrow);
         assert_eq!(results[ip()].core, TokenCore::Ident("i64".into()));
-        assert_eq!(results[ip()].core, TokenCore::OpenBrace);
+        assert_eq!(results[ip()].core, TokenCore::OpenCurly);
         assert_eq!(results[ip()].core, TokenCore::Ident("x".into()));
         assert_eq!(results[ip()].core, TokenCore::Plus);
         assert_eq!(results[ip()].core, TokenCore::Ident("y".into()));
-        assert_eq!(results[ip()].core, TokenCore::CloseBrace);
+        assert_eq!(results[ip()].core, TokenCore::CloseCurly);
         assert_eq!(results[ip()].core, TokenCore::Semicolon);
         assert_eq!(results[ip()].core, TokenCore::Semicolon);
         assert_eq!(results[ip()].core, TokenCore::Keyword(Keyword::Let));
@@ -1146,4 +1171,5 @@ mod tests {
         assert_eq!(errs[0].desc, LexerErrCases::UnfinishedRawStrLiteral);
     }
 }
+
 
