@@ -815,7 +815,7 @@ fn lexer_step(worktable: &mut LexingWorktable) -> Result<Token, LexerErrMsg> {
             '\'' => {
                 return match (worktable.peek()?, worktable.peek_next(), char_can_start_ident(worktable.peek()?)) {
                     (ch, Some('\''), _) => { worktable.advance_x(2); Ok(worktable.add_metadata(TokenCore::Char(ch))) },
-                    (_ident_char, _not_apos_again, true) => { worktable.consume_apos_ident() }
+                    (_ident_char, _not_apos_again, true) => { worktable.consume_apos_ident() },
                     ('\\', Some(not_eof), _) => {
                         worktable.advance();  // go past '\\'
                         let char = worktable.consume_escape_sequence()?;

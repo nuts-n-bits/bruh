@@ -5,18 +5,33 @@ use crate::lexer::TokenCore;
 use crate::lexer::Keyword;
 use crate::lexer::NumericLiteral;
 use std::cell::Cell;
+use std::num::ParseIntError;
+use std::string::ParseError;
 use ast::{*};
-use WhilePArsingWhat::{*};
-use crate::parser::WhileParsingWhat::{FnBody, FnParamList};
 
 pub mod ast {
-    use std::fmt::Formatter;
+
+    fn pg() {
+        impl FnDecl<'_> {
+
+        }
+    }
 
     #[derive(Debug)]
     pub struct FnDecl<'a> {
         pub fn_ident: &'a str,
         pub return_type: Type<'a>,
         pub visibility: Vis,
+        pub param_list: Vec<(&'a str, Type<'a>)>,
+        pub body: Vec<FnBodyStuff<'a>>,
+    }
+
+    #[derive(Debug)]
+    pub enum FnBodyStuff<'a> {
+        FnDecl(FnDecl<'a>),
+        Struct,
+        Mod,
+        Enum,
     }
 
     #[derive(Debug)]
@@ -79,52 +94,72 @@ pub mod ast {
     pub enum Vis {
         Pub,
         Private,
+        PubCrate,
+        PubSuper,
+        PubIn(Path),
     }
+
+    #[derive(Debug)]
+    pub struct Path;
 
     #[derive(Debug)]
     pub enum TopLevelStuff<'a> {
         FnDecl(FnDecl<'a>),
         Mod(Mod<'a>),
         ModPtr(ModPtr<'a>),
+        Enum(Enum<'a>),
+        Struct(Struct<'a>),
+        Impl(Impl<'a>),
     }
 
     #[derive(Debug)]
-    pub enum StructDecl<'a> {
+    pub enum Struct<'a> {
         Tagged(Vec<(&'a str, Type<'a>)>),
         Untagged(Vec<Type<'a>>),
         Unit,
     }
+
+    #[derive(Debug)]
+    pub struct Impl<'a> (pub &'a str);
+
+    #[derive(Debug)]
+    pub struct File<'a> (pub Vec<TopLevelStuff<'a>>);
 }
 
-enum X {
-    A(String),
-    B = 2,
-}
-
-const m: i32 = X::A as i32;
-
-#[derive(Debug)]
-pub enum WhileParsingWhat {
+#[derive(Debug, Clone, Copy)]
+pub enum NowParsingWhat {
     Enum,
     Fn,
     FnParamList,
     FnBody,
     Type,
     Mod,
+    File,
 }
 
 #[derive(Debug)]
 pub enum ParserError<'a> {
-    // (Error case)                                 (WhileParsingWhat, Offending token)
-    OpenAngleBracketExpected                        (WhileParsingWhat, &'a Token),
-    OpenParenExpected                               (WhileParsingWhat, &'a Token),
-    CloseParenExpected                              (WhileParsingWhat, &'a Token),
-    OpenCurlyExpected                               (WhileParsingWhat, &'a Token),
-    OpenBracketExpected                             (WhileParsingWhat, &'a Token),
-    CloseBracketExpected                            (WhileParsingWhat, &'a Token),
-    IdentExpected                                   (WhileParsingWhat, &'a Token),
-    KeywordExpected                                 (WhileParsingWhat, &'a Token),
-    Keyword1ExpectedGotKeyword2                     (WhileParsingWhat, Keyword, &'a Keyword),
+    // (Error case)                                 (NowParsingWhat, Offending token)
+    OpenAngleBracketExpected                        (NowParsingWhat, &'a Token),
+    OpenParenExpected                               (NowParsingWhat, &'a Token),
+    CloseParenExpected                              (NowParsingWhat, &'a Token),
+    OpenCurlyExpected                               (NowParsingWhat, &'a Token),
+    CloseCurlyExpected                              (NowParsingWhat, &'a Token),
+    OpenBracketExpected                             (NowParsingWhat, &'a Token),
+    CloseBracketExpected                            (NowParsingWhat, &'a Token),
+    IdentExpected                                   (NowParsingWhat, &'a Token),
+    KeywordExpected                                 (NowParsingWhat, &'a Token),
+    CommaExpected                                   (NowParsingWhat, &'a Token),
+    Keyword1ExpectedGotKeyword2                     (NowParsingWhat, Keyword, &'a Keyword),
+    VisFineGrainModifierExpected                    (NowParsingWhat, &'a Token),
+    ColonExpected                                   (NowParsingWhat, &'a Token),
+    TopLevelItemExpected                            (NowParsingWhat, &'a Token),
+    TopLevelItemOrEofExpected                       (NowParsingWhat, &'a Token),
+    TopLevelItemOrCloseCurlyExpected                (NowParsingWhat, &'a Token),
+
+
+    ParseIntError                                   (ParseIntError),
+
     // Fn Decl
     FnDeclParamListOpenParenExpected                (&'a Token),
     FnDeclParamListCloseParenExpected               (&'a Token),
@@ -147,16 +182,16 @@ pub enum ParserError<'a> {
 pub struct ParsingWorktable<'a> {
     tokens: &'a [Token],
     index: Cell<usize>,
+    now_parsing: Cell<NowParsingWhat>,
 }
 
 // Most basic primitive helper operations, not directly related to parsing
 impl ParsingWorktable<'_> {
     pub fn new(tokens: &[Token]) -> ParsingWorktable {
-        ParsingWorktable { tokens: &tokens, index: Cell::new(0) }
+        ParsingWorktable { tokens: &tokens, index: Cell::new(0), now_parsing: Cell::new(NowParsingWhat::File) }
     }
-    fn peek(&self) -> Result<&Token, ParserError> {
-        if self.index.get() >= self.tokens.len() { Err(ParserError::UnexpectedEof) }
-        else { Ok(&self.tokens[self.index.get()]) }
+    fn peek(&self) -> &Token {
+        &self.tokens[self.index.get()]
     }
     fn peek_x(&self, offset: usize) -> Result<&Token, ParserError> {
         let wanted = self.index.get() + offset;
@@ -185,105 +220,196 @@ impl ParsingWorktable<'_> {
         self.index.set(self.index.get() + 1);
         Ok(ret)
     }
+    fn try_it<'a, T>(&self, closure: impl Fn() -> Result<T, ParserError<'a>>) -> Result<T, ParserError<'a>> {
+        let return_point = self.get_return_point();
+        let now_parsing = self.now_parsing_what();
+        match closure() {
+            Ok(t) => Ok(t),
+            Err(e) => {
+                self.return_to_point(return_point);
+                self.now_parsing.set(now_parsing);
+                Err(e)
+            }
+        }
+    }
+    fn now_parsing_what(&self) -> NowParsingWhat {
+        self.now_parsing.get()
+    }
 }
 
 // Try consume one very simple Token
 impl ParsingWorktable<'_> {
-    fn try_consume_open_paren(&self, while_parsing: WhileParsingWhat) -> Result<(), ParserError> {
-        return match self.peek()? {
+    fn try_consume_comma(&self) -> Result<(), ParserError> {
+        return match self.peek() {
+            Token { core: TokenCore::Comma, .. } => { self.advance() ;; Ok(()) },
+            token => Err(ParserError::CommaExpected(self.now_parsing_what(), token)),
+        }
+    }
+    fn try_consume_open_paren(&self) -> Result<(), ParserError> {
+        return match self.peek() {
             Token { core: TokenCore::OpenParen, .. } => { self.advance() ;; Ok(()) },
-            token => Err(ParserError::OpenParenExpected(while_parsing, token)),
+            token => Err(ParserError::OpenParenExpected(self.now_parsing_what(), token)),
         }
     }
-    fn try_consume_open_curly(&self, while_parsing: WhileParsingWhat) -> Result<(), ParserError> {
-        return match self.peek()? {
+    fn try_consume_close_paren(&self) -> Result<(), ParserError> {
+        return match self.peek() {
+            Token { core: TokenCore::CloseParen, .. } => { self.advance() ;; Ok(()) },
+            token => Err(ParserError::CloseParenExpected(self.now_parsing_what(), token)),
+        }
+    }
+    fn try_consume_open_curly(&self) -> Result<(), ParserError> {
+        return match self.peek() {
             Token { core: TokenCore::OpenCurly, .. } => { self.advance() ;; Ok(()) },
-            token => Err(ParserError::OpenCurlyExpected(while_parsing, token))
+            token => Err(ParserError::OpenCurlyExpected(self.now_parsing_what(), token))
         }
     }
-    fn try_consume_open_bracket(&self, while_parsing: WhileParsingWhat) -> Result<(), ParserError> {
-        return match self.peek()? {
+    fn try_consume_open_bracket(&self) -> Result<(), ParserError> {
+        return match self.peek() {
             Token { core: TokenCore::OpenBracket, .. } => { self.advance() ;; Ok(()) },
-            token => Err(ParserError::OpenBracketExpected(while_parsing, token)),
+            token => Err(ParserError::OpenBracketExpected(self.now_parsing_what(), token)),
         }
     }
-    fn try_consume_keyword(&self, keyword1: Keyword, while_parsing: WhileParsingWhat) -> Result<(), ParserError> {
-        return match self.peek()? {
+    fn try_consume_keyword(&self, keyword1: Keyword) -> Result<(), ParserError> {
+        return match self.peek() {
             Token { core: TokenCore::Keyword(keyword2), .. } => {
-                if keyword1 == keyword2 { { self.advance() ;; Ok(()) } }
-                else { Err(ParserError::Keyword1ExpectedGotKeyword2(while_parsing, keyword1, keyword2)) }
+                if &keyword1 == keyword2 { { self.advance() ;; Ok(()) } }
+                else { Err(ParserError::Keyword1ExpectedGotKeyword2(self.now_parsing_what(), keyword1, keyword2)) }
             }
-            token => Err(ParserError::KeywordExpected(while_parsing, token)),
+            token => Err(ParserError::KeywordExpected(self.now_parsing_what(), token)),
         }
     }
-    fn try_consume_ident(&self, while_parsing: WhileParsingWhat) -> Result<&str, ParserError> {
-        return match self.peek()? {
+    fn try_consume_ident(&self) -> Result<&str, ParserError> {
+        return match self.peek() {
             Token { core: TokenCore::Ident(id), .. } => { self.advance() ;; Ok(id) },
-            token => Err(ParserError::IdentExpected(while_parsing, token)),
+            token => Err(ParserError::IdentExpected(self.now_parsing_what(), token)),
         }
     }
-    fn try_consume_close_bracket(&self, while_parsing: WhileParsingWhat) -> Result<(), ParserError> {
-        return match self.peek()? {
+    fn try_consume_close_bracket(&self) -> Result<(), ParserError> {
+        return match self.peek() {
             Token { core: TokenCore::CloseBracket, .. } => { self.advance() ;; Ok(()) },
-            token => Err(ParserError::CloseBracketExpected(while_parsing, token)),
+            token => Err(ParserError::CloseBracketExpected(self.now_parsing_what(), token)),
         }
     }
-    fn try_consume_open_angle(&self, while_parsing: WhileParsingWhat) -> Result<(), ParserError> {
-        return match self.peek()? {
+    fn try_consume_close_curly(&self) -> Result<(), ParserError> {
+        return match self.peek() {
+            Token { core: TokenCore::CloseCurly, .. } => { self.advance() ;; Ok(()) },
+            token => Err(ParserError::CloseCurlyExpected(self.now_parsing_what(), token)),
+        }
+    }
+    fn try_consume_open_angle(&self) -> Result<(), ParserError> {
+        return match self.peek() {
             Token { core: TokenCore::Lt, .. } => { self.advance() ;; Ok(()) }
-            token => Err(ParserError::OpenAngleBracketExpected(while_parsing, token)),
+            token => Err(ParserError::OpenAngleBracketExpected(self.now_parsing_what(), token)),
+        }
+    }
+    fn try_consume_colon(&self) -> Result<(), ParserError> {
+        return match self.peek() {
+            Token { core: TokenCore::Colon, .. } => { self.advance() ;; Ok(()) }
+            token => Err(ParserError::ColonExpected(self.now_parsing_what(), token)),
         }
     }
 }
 
 // Try consume basic patterns: AngleParamList<Type, Type, ...>
 impl ParsingWorktable<'_> {
-    fn try_consume_angle_bracket_type_list(&self, end_with) -> Result<Vec<Type>, ParserError> {
-        let _open_angle_bracket = self.try_consume_open_angle(Type)?;
-        let mut type_list: Vec<Type> = vec![];
-        loop {
-            type_list.push(self.try_consume_type()?);
-            match self.peek() {
-                Ok(Token { core: TokenCore::Comma, .. }) => { self.advance() ;; continue },
-                Ok(Token { core: TokenCore::Gt, .. }) => { self.advance() ;; return Ok(type_list) },
-                token => return Err(ParserError::TypeParamListUnexpectedToken(token?)),
-            }
-        }
-    }
+    // fn try_consume_angle_bracket_type_list(&self, end_with: TokenCore) -> Result<Vec<Type>, ParserError> {
+    //     let _open_angle_bracket = self.try_consume_open_angle(Type)?;
+    //     let mut type_list: Vec<Type> = vec![];
+    //     loop {
+    //         type_list.push(self.try_consume_type()?);
+    //         match self.peek() {
+    //             Ok(Token { core: TokenCore::Comma, .. }) => { self.advance() ;; continue },
+    //             Ok(Token { core: TokenCore::Gt, .. }) => { self.advance() ;; return Ok(type_list) },
+    //             token => return Err(ParserError::TypeParamListUnexpectedToken(token?)),
+    //         }
+    //     }
+    // }
 }
 
+// Try consume some fragments: pub (visibility modifier) and type.
 impl ParsingWorktable<'_> {
 
+    fn try_consume_visibility_modifier(&self) -> Result<Vis, ParserError> {
+        self.try_it(|| { self._consume_visibility_modifier() })
+    }
+    fn _consume_visibility_modifier(&self) -> Result<Vis, ParserError> {
+        // if no pub keyword, then it's simply private by default
+        if let Err(_no_pub_keyword) = self.try_consume_keyword(Keyword::Pub) { return Ok(Vis::Private) }
+        // pub, but no open paren -> regular pub. with open paren -> modified pub
+        if let Err(_no_open_paren) = self.try_consume_open_paren() { return Ok(Vis::Pub) }
+        // OpenParen exists!
+        //    |-- pub(self)
+        //    |-- pub(crate)
+        //    |-- pub(super)
+        //    +-- pub(in ...)
+        return if let Ok(_keyword_crate) = self.try_consume_keyword(Keyword::Crate) {
+            let _close_paren = self.try_consume_close_paren()?;
+            Ok(Vis::PubCrate)
+        }
+        else if let Ok(_keyword_super) = self.try_consume_keyword(Keyword::Super) {
+            let _close_paren = self.try_consume_close_paren()?;
+            Ok(Vis::PubSuper)
+        }
+        else if let Ok(_keyword_in) = self.try_consume_keyword(Keyword::In) {
+            let path = self.try_consume_path()?;
+            let _close_paren = self.try_consume_close_paren()?;
+            Ok(Vis::PubIn(path))
+        }
+        else if let Ok(_keyword_self) = self.try_consume_keyword(Keyword::Self_) {
+            let _close_paren = self.try_consume_close_paren()?;
+            Ok(Vis::Private)
+        }
+        else {
+            Err(ParserError::VisFineGrainModifierExpected(self.now_parsing_what(), self.peek()))
+        }
+    }
+
     fn try_consume_type(&self) -> Result<Type, ParserError> {
-        let _open_paren = match self.peek()? {
+        self.try_it(|| { self._consume_type() })
+    }
+    fn _consume_type(&self) -> Result<Type, ParserError> {
+        match self.peek() {
             Token { core: TokenCore::OpenParen, .. } => self.advance(),  // () or (Type) or (Type, Type, ...)
-            Token { core: TokenCore::Ident(id), .. }  => { self.advance() ;; return self.try_consume_named_type(id) }, // NamedType
+            Token { core: TokenCore::Ident(id), .. }  => { self.advance() ;; return self.try_consume_named_type() }, // NamedType
             Token { core: TokenCore::OpenBracket, .. } => { self.advance() ;; return self.try_consume_bracket_type() }  // [Type]
             Token { core: TokenCore::Bang, .. } => { self.advance() ;; return Ok(Type::Never); },  // ! type is never type
             Token { core: TokenCore::Question, .. } => { self.advance() ;; return Ok(Type::Unknown); },  // ? type is unknown type
-            Token { core: TokenCore::StrLit(str), .. } => { self.advance() ;; return Ok((Type::LiteralStr(str))) },
-            Token { core: TokenCore::Numeric(NumericLiteral::ImplicitDecI(str)), .. } => { i64::try_from(str) }
+            Token { core: TokenCore::StrLit(str), .. } => { self.advance() ;; return Ok(Type::LiteralStr(str)) },
+            Token { core: TokenCore::Numeric(NumericLiteral::ImplicitDecI(str)), .. } => { Ok(Type::LiteralInt(i64::from_str_radix(str, 10)?)) }
+            Token { core: TokenCore::Numeric(NumericLiteral::ImplicitHexI(str)), .. } => { Ok(Type::LiteralInt(i64::from_str_radix(str, 16)?)) }
             token => return Err(ParserError::TypeExpected(token))
         };  // if seen open paren, continue, expect (), (Type), (Type, Type, ...)
         let mut tuple_list: Vec<Type> = vec![];
         let _unreachable = loop {
             tuple_list.push(self.try_consume_type()?);
             match self.peek() {
-                Ok(Token { core: TokenCore::Comma, .. }) => self.advance(),
-                Ok(Token { core: TokenCore::CloseParen, .. }) => { self.advance() ;; return Ok(Type::from_vec(tuple_list)); },
+                Token { core: TokenCore::Comma, .. } => self.advance(),
+                Token { core: TokenCore::CloseParen, .. } => { self.advance() ;; return Ok(Type::from_vec(tuple_list)); },
                 token => return Err(ParserError::TypeTupleCommaOrCloseParenExpected(token?)),
             }
         };
+        impl From<ParseIntError> for ParserError<'_> {
+            fn from(parse_int_error: ParseIntError) -> Self {
+                ParserError::ParseIntError(parse_int_error)
+            }
+        }
     }
+
     fn try_consume_bracket_type(&self) -> Result<Type, ParserError> {
+        self.try_it(|| { self._consume_bracket_type() })
+    }
+    fn _consume_bracket_type(&self) -> Result<Type, ParserError> {
         let type_within = self.try_consume_type()?;
-        let _close_bracket = self.try_consume_close_bracket(Type)?;
+        let _close_bracket = self.try_consume_close_bracket()?;
         return Ok(Type::Bracket(Box::new(type_within)))
     }
 
-    /** Only call after having de-parenthesized the type expression */
-    fn try_consume_named_type<'a>(&'a self, type_ident: &'a str) -> Result<Type<'a>, ParserError<'a>> {
-        if let Err(_) = self.try_consume_open_angle(Type) {
+    fn try_consume_named_type(& self) -> Result<Type, ParserError> {
+        self.try_it(|| { self._consume_named_type() })
+    }
+    fn _consume_named_type(&self) -> Result<Type, ParserError> {
+        let type_ident = self.try_consume_ident()?;
+        if let Err(_) = self.try_consume_open_angle() {
             // if no angle bracket follows the ident, this is a 0-param type
             return Ok(Type::Named { type_name: type_ident, params: vec![] })
         }
@@ -292,145 +418,122 @@ impl ParsingWorktable<'_> {
         loop {
             type_param_list.push(self.try_consume_type()?);
             match self.peek() {
-                Ok(Token { core: TokenCore::Comma, .. }) => { self.advance() ;; continue },
-                Ok(Token { core: TokenCore::Gt, .. }) => { self.advance() ;; return Ok(Type::Named { type_name: type_ident, params: type_param_list }) },
-                token => return Err(ParserError::TypeParamListUnexpectedToken(token?)),
+                Token { core: TokenCore::Comma, .. } => { self.advance() ;; continue },
+                Token { core: TokenCore::Gt, .. } => { self.advance() ;; return Ok(Type::Named { type_name: type_ident, params: type_param_list }) },
+                token => return Err(ParserError::TypeParamListUnexpectedToken(token)),
             };
         }
     }
+}
 
+fn trtt(ident: i64,) {
 
+}
 
-    /** Consume Keyword '(pub) enum' before calling */
-    fn try_consume_enum(&self, vis: Vis) -> Result<Enum, ParserError> {
-        let enum_ident = self.try_consume_ident(Enum)?;
-        let _open_curly = self.try_consume_open_curly(Enum);
-        let mut variants: Vec<EnumVariant> = vec![];
-        'consume_variant: loop {
-            match self.consume()? {
-                Token { core: TokenCore::CloseCurly, .. } => { break },
-                Token { core: TokenCore::Ident(ident), .. } => {
-                    match self.peek()? {
-                        Token { core: TokenCore::OpenParen, .. } => loop {
-
-                        },
-                        Token { core: TokenCore::Comma, .. } => {
-                            variants.push(EnumVariant::BareIdent(ident));
-                            continue 'consume_variant
-                        }
-                    }
-                }
-            }
+// try consume whole items: Fn, Struct, Enum
+impl ParsingWorktable<'_> {
+    fn _consume_fn_decl(&self) -> Result<FnDecl, ParserError> {
+        self.now_parsing.set(NowParsingWhat::Fn);
+        let visibility = self.try_consume_visibility_modifier()?;
+        let keyword_fn = self.try_consume_keyword(Keyword::Fn)?;
+        let fn_ident = self.try_consume_ident()?;
+        self.now_parsing.set(NowParsingWhat::FnParamList);
+        let open_paren = self.try_consume_open_paren()?;
+        let mut param_list: Vec<(&str, Type)> = vec![];
+        'expect_param_ident: loop {
+            let ident = match self.try_consume_ident() {
+                Err(_) => break 'expect_param_ident,
+                Ok(ident) => ident,
+            };
+            let colon = self.try_consume_colon()?;
+            let type_ = self.try_consume_type()?;
+            param_list.push((ident, type_));
+            let maybe_comma = match self.try_consume_comma() {
+                Err(_) => break 'expect_param_ident,
+                Ok(comma) => comma,
+            };
         }
-        let enum_ = Enum { ident: enum_ident, visibility: vis, body: variants }
-    }
-
-    /** Keyword::Fn should have already been consumed before calling this */
-    fn try_consume_function_declaration(&self, vis: Vis) -> Result<FnDecl, ParserError> {
-
-        let fn_name = self.try_consume_ident(Fn)?;
-
-        let _open_paren = self.try_consume_open_paren(FnParamList)?;
-
-        println!("starting to read parameter list");
-
-        //let mut param_list: Vec<Param> = vec![];
-
-        println!("done reading parameter list");
-
-        let _close_paren = match self.consume()? {
-            Token { core: TokenCore::CloseParen, .. } => (),
-            token => return Err(ParserError::FnDeclParamListCloseParenExpected(token)),
+        let close_paren = self.try_consume_close_paren();
+        let return_type = match self.peek() {
+            Token { core: TokenCore::Arrow, .. } => { self.advance() ;; self.try_consume_type()? }
+            Token { core: TokenCore::OpenCurly, .. } => { Type::Unit }
+            token => return Err(ParserError::OpenCurlyExpected(self.now_parsing_what(), token)),
         };
+        let open_curly = self.try_consume_open_curly()?;
+        self.now_parsing.set(NowParsingWhat::FnBody);
+        let mut fn_body_items: Vec<FnBodyStuff> = vec![];
 
-        let return_type = match self.consume()? {
-            Token { core: TokenCore::Arrow, .. } => self.try_consume_type()?,
-            _not_arrow => { self.un_advance() ;; Type::Unit }
-        };
+        // loop {
+        //     // TODO: consume fn body
+        //     // TODO: consume fn body
+        //     // TODO: consume fn body
+        //     todo!()
+        //     // TODO: consume fn body
+        //     // TODO: consume fn body
+        //     // TODO: consume fn body
+        //
+        // }
 
-        let _open_curly = self.try_consume_open_curly(FnBody);
-
-        let _close_curly = match self.consume()? {
-            Token { core: TokenCore::CloseCurly, .. } => (),
-            token => return Err(ParserError::FnDeclBodyCloseBraceExpected(token)),
-        };
-
-        Ok(FnDecl {
-            fn_ident: fn_name,
+        return Ok(FnDecl {
+            fn_ident,
             return_type,
-            visibility: vis,
+            visibility,
+            param_list,
+            body: fn_body_items,
         })
     }
-    // fn _try_consume_struct_declaration(&self) -> Result<StructDecl, ParserError> {
-    //
-    // }
 }
 
 // consume: concrete mod, file
 enum EndWith { CloseBrace, Eof }
 impl ParsingWorktable<'_> {
-    fn try_consume_file<'a>(&'a self, mod_name: &'a str) -> Result<Mod<'a>, ParserError<'a>> {
-        let return_point = self.get_return_point();
-        return match self._try_consume_top_level_stuff(mod_name, EndWith::Eof, Vis::Pub) {
-            Ok(mod_) => Ok(mod_),
-            Err(e) => { self.return_to_point(return_point) ;; Err(e)}
-        }
-    }
-    fn try_consume_mod(&self, vis: Vis) -> Result<TopLevelStuff, ParserError> {
-        // expects: mod_identifier {...}, with `(pub)? mod` keyword(s) already consumed
-        let return_point = self.get_return_point();
-        let mod_name = self.try_consume_ident(Mod);
-        let _consume_mod_open_brace = match self.consume()? {
-            Token { core: TokenCore::OpenCurly, .. } => (),
-            Token { core: TokenCore::Semicolon, .. } => return Ok(
-                TopLevelStuff::ModPtr(ModPtr { visibility: vis, mod_name })
-            ),
-            token => return Err(ParserError::ModBodyOpenBraceExpected(token)),
-        };
-        return match self._try_consume_top_level_stuff(mod_name, EndWith::CloseBrace, vis) {
-            Ok(mod_) => Ok(TopLevelStuff::Mod(mod_)),
-            Err(e) => { self.return_to_point(return_point) ;; Err(e)}
-        }
-    }
-    fn _try_consume_top_level_stuff<'a>(&'a self, mod_name: &'a str, end_with: EndWith, visibility: Vis) -> Result<Mod<'a>, ParserError<'a>> {
-        let mut stuff: Vec<TopLevelStuff> = vec![];
+    fn _consume_file<'a>(&'a self, file_name: &'a str) -> Result<File<'a>, ParserError<'a>> {
+        let mut top_level_vec: Vec<TopLevelStuff> = vec![];
         loop {
-            let cur_tok = self.consume()?;
-            match cur_tok.core {
-                TokenCore::Keyword(Keyword::Pub) => {
-                    let tok_after_pub = self.consume()?;
-                    match tok_after_pub.core {
-                        TokenCore::Keyword(Keyword::Fn) => stuff.push(TopLevelStuff::FnDecl(self.try_consume_function_declaration(Vis::Pub)?)),
-                        TokenCore::Keyword(Keyword::Struct) => todo!(),
-                        TokenCore::Keyword(Keyword::Mod) => stuff.push(self.try_consume_mod(Vis::Pub)?),
-                        TokenCore::Keyword(Keyword::Enum) => todo!(),
-                        TokenCore::Keyword(Keyword::Use) => todo!(),
-                        TokenCore::Keyword(Keyword::Let) => todo!(),
-                        _ => todo!(),
-                    }
-                }
-                TokenCore::Keyword(Keyword::Fn) => stuff.push(TopLevelStuff::FnDecl(self.try_consume_function_declaration(Vis::Private)?)),
-                TokenCore::Keyword(Keyword::Struct) => todo!(),
-                TokenCore::Keyword(Keyword::Mod) => stuff.push(self.try_consume_mod(Vis::Private)?),
-                TokenCore::Keyword(Keyword::Enum) => todo!(),
-                TokenCore::Keyword(Keyword::Use) => todo!(),
-                TokenCore::Keyword(Keyword::Impl) => todo!(),
-                TokenCore::Keyword(Keyword::Let) => todo!(),
-                TokenCore::Eof => {
-                    return match end_with {
-                        EndWith::Eof => Ok(Mod { ident: mod_name, stuff, visibility }),
-                        EndWith::CloseBrace => Err(ParserError::ModUnexpectedEof(cur_tok)),
-                    }
-                },
-                TokenCore::CloseCurly => {
-                    return match end_with {
-                        EndWith::Eof => Err(ParserError::ModUnexpectedCloseBrace(cur_tok)),
-                        EndWith::CloseBrace => Ok(Mod { ident: mod_name, stuff, visibility })
-                    }
-                }
-                _ => todo!(),
+            if let Ok(top_level) = self.try_consume_top_level_stuff() {
+                top_level_vec.push(top_level)
+            }
+            else if let Token { core: TokenCore::Eof, .. } = self.peek() {
+                return Ok(File(top_level_vec))
+            }
+            else {
+                return Err(ParserError::TopLevelItemOrEofExpected(self.now_parsing_what(), self.peek()))
             }
         }
+    }
+
+    fn try_consume_mod(&self) -> Result<Mod, ParserError> {
+        self.try_it(|| { self._consume_mod() })
+    }
+    fn _consume_mod(&self) -> Result<Mod, ParserError> {
+        let visibility = self.try_consume_visibility_modifier()?;
+        let _mod_keyword = self.try_consume_keyword(Keyword::Mod)?;
+        let mod_name = self.try_consume_ident()?;
+        let _open_curly = self.try_consume_open_curly()?;
+        let mut top_level_vec: Vec<TopLevelStuff> = vec![];
+        loop {
+            if let Ok(top_level) = self.try_consume_top_level_stuff() {
+                top_level_vec.push(top_level)
+            }
+            else if let Ok(_close_curly) = self.try_consume_close_curly() {
+                return Ok(Mod { ident: mod_name, visibility, stuff: top_level_vec })
+            }
+            else {
+                return Err(ParserError::TopLevelItemOrEofExpected(self.now_parsing_what(), self.peek()))
+            }
+        }
+    }
+    fn try_consume_top_level_stuff(&self) -> Result<TopLevelStuff, ParserError> {
+        self.try_it(|| { self._consume_top_level_stuff() })
+    }
+    fn _consume_top_level_stuff(&self) -> Result<TopLevelStuff, ParserError> {
+        // TODO: if let Ok(fn_decl) = self.try_consume_fn_decl() { Ok(TopLevelStuff::FnDecl(fn_decl)) }
+        // TODO: else if let Ok(enum_) = self.try_consume_enum() { Ok(TopLevelStuff::Enum(enum_)) }
+        // TODO: else if let Ok(struct_) = self.try_consume_struct() { Ok(TopLevelStuff::Struct(struct_)) }
+        // else
+        if let Ok(mod_) = self.try_consume_mod() { Ok(TopLevelStuff::Mod(mod_)) }
+        // TODO: else if let Ok(impl_) = self.try_consume_impl() { Ok(TopLevelStuff::Impl(impl_)) }
+        else { Err(ParserError::TopLevelItemExpected(self.now_parsing_what(), self.peek())) }
     }
 }
 
