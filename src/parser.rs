@@ -9,12 +9,18 @@ use std::num::ParseIntError;
 use std::string::ParseError;
 use ast::{*};
 
+fn pg() {
+
+    let clo = |i: i32, j: i32| -> i64 { i as i64 * j as i64 };
+}
+
 pub mod ast {
+    use crate::lexer::NumericLiteral;
 
-    fn pg() {
-        impl FnDecl<'_> {
-
-        }
+    #[derive(Debug)]
+    pub struct NumericLiteralExpr<'a> {
+        pub num_lit: &'a NumericLiteral,
+        pub neg: bool,
     }
 
     #[derive(Debug)]
@@ -54,7 +60,9 @@ pub mod ast {
             else if vec.len() == 1 {  // unwraps if the 'tuple' is exactly 1 in length
                 let only_type = vec.remove(0);
                 match only_type {
-                    Type::Never | Type::Unknown | Type::Unit | Type::Named { .. } | Type::Bracket(..) => only_type,
+                    Type::Never | Type::Unknown | Type::Unit |
+                    Type::Named { .. } | Type::Bracket(..) |
+                    Type::LiteralInt(..) | Type::LiteralStr(..) => only_type,
                     Type::Tuple(vec) => Type::from_vec(vec)
                 }
             }
@@ -141,6 +149,8 @@ pub enum NowParsingWhat {
 pub enum ParserError<'a> {
     // (Error case)                                 (NowParsingWhat, Offending token)
     OpenAngleBracketExpected                        (NowParsingWhat, &'a Token),
+    ArrowExpected                                   (NowParsingWhat, &'a Token),
+    DashExpected                                    (NowParsingWhat, &'a Token),
     OpenParenExpected                               (NowParsingWhat, &'a Token),
     CloseParenExpected                              (NowParsingWhat, &'a Token),
     OpenCurlyExpected                               (NowParsingWhat, &'a Token),
@@ -153,12 +163,18 @@ pub enum ParserError<'a> {
     Keyword1ExpectedGotKeyword2                     (NowParsingWhat, Keyword, &'a Keyword),
     VisFineGrainModifierExpected                    (NowParsingWhat, &'a Token),
     ColonExpected                                   (NowParsingWhat, &'a Token),
+    BangExpected                                    (NowParsingWhat, &'a Token),
+    QuestionExpected                                (NowParsingWhat, &'a Token),
+    StrLitExpected                                  (NowParsingWhat, &'a Token),
     TopLevelItemExpected                            (NowParsingWhat, &'a Token),
     TopLevelItemOrEofExpected                       (NowParsingWhat, &'a Token),
     TopLevelItemOrCloseCurlyExpected                (NowParsingWhat, &'a Token),
-
+    NumericLiteralTypeMustBeI64                     (NowParsingWhat, &'a NumericLiteral),
+    NumericLiteralExpected                          (NowParsingWhat, &'a Token),
 
     ParseIntError                                   (ParseIntError),
+
+    DevGeneric,
 
     // Fn Decl
     FnDeclParamListOpenParenExpected                (&'a Token),
@@ -308,6 +324,62 @@ impl ParsingWorktable<'_> {
             token => Err(ParserError::ColonExpected(self.now_parsing_what(), token)),
         }
     }
+    fn try_consume_bang(&self) -> Result<(), ParserError> {
+        return match self.peek() {
+            Token { core: TokenCore::Bang, .. } => { self.advance() ;; Ok(()) }
+            token => Err(ParserError::BangExpected(self.now_parsing_what(), token)),
+        }
+    }
+    fn try_consume_question(&self) -> Result<(), ParserError> {
+        return match self.peek() {
+            Token { core: TokenCore::Question, .. } => { self.advance() ;; Ok(()) }
+            token => Err(ParserError::QuestionExpected(self.now_parsing_what(), token)),
+        }
+    }
+    fn try_consume_str_lit(&self) -> Result<&str, ParserError> {
+        return match self.peek() {
+            Token { core: TokenCore::StrLit(str), .. } => { self.advance() ;; Ok(str) }
+            token => Err(ParserError::StrLitExpected(self.now_parsing_what(), token)),
+        }
+    }
+    fn try_consume_num_lit(&self) -> Result<NumericLiteralExpr, ParserError> {
+        self.try_it(|| self._try_consume_num_lit(false))
+    }
+    fn _try_consume_num_lit(&self, neg: bool) -> Result<NumericLiteralExpr, ParserError> {
+        return if let Ok(num_lit) = self._try_consume_bare_bones_num_lit() {
+            Ok(NumericLiteralExpr { num_lit, neg: neg })
+        }
+        else if let Ok(_) = self.try_consume_open_paren() {
+            let num_lit_expr = self._try_consume_num_lit(neg)?;
+            let _ = self.try_consume_close_paren();
+            Ok(num_lit_expr)
+        }
+        else if let Ok(_) = self.try_consume_dash() {
+            let num_lit_expr = self._try_consume_num_lit(!neg)?;
+            Ok(num_lit_expr)
+        }
+        else {
+            Err(ParserError::NumericLiteralExpected(self.now_parsing_what(), self.peek()))
+        }
+    }
+    fn _try_consume_bare_bones_num_lit(&self) -> Result<&NumericLiteral, ParserError> {
+        return match self.peek() {
+            Token { core: TokenCore::Numeric(num_lit), .. } => { self.advance() ;; Ok(num_lit) },
+            token => Err(ParserError::NumericLiteralExpected(self.now_parsing_what(), token)),
+        }
+    }
+    fn try_consume_arrow(&self) -> Result<(), ParserError> {
+        return match self.peek() {
+            Token { core: TokenCore::Arrow, .. } => { self.advance() ;; Ok(()) }
+            token => Err(ParserError::ArrowExpected(self.now_parsing_what(), token)),
+        }
+    }
+    fn try_consume_dash(&self) -> Result<(), ParserError> {
+        return match self.peek() {
+            Token { core: TokenCore::Dash, .. } => { self.advance() ;; Ok(()) }
+            token => Err(ParserError::DashExpected(self.now_parsing_what(), token)),
+        }
+    }
 }
 
 // Try consume basic patterns: AngleParamList<Type, Type, ...>
@@ -328,6 +400,13 @@ impl ParsingWorktable<'_> {
 
 // Try consume some fragments: pub (visibility modifier) and type.
 impl ParsingWorktable<'_> {
+
+    fn try_consume_path(&self) -> Result<Path, ParserError> {
+        todo!();
+    }
+    fn _consume_path(&self) -> Result<Path, ParserError> {
+        todo!();
+    }
 
     fn try_consume_visibility_modifier(&self) -> Result<Vis, ParserError> {
         self.try_it(|| { self._consume_visibility_modifier() })
@@ -367,16 +446,30 @@ impl ParsingWorktable<'_> {
     fn try_consume_type(&self) -> Result<Type, ParserError> {
         self.try_it(|| { self._consume_type() })
     }
+
     fn _consume_type(&self) -> Result<Type, ParserError> {
+
+        if let Ok(bracket_type) = self.try_consume_bracket_type() { return Ok(bracket_type) }
+        else if let Ok(named_type) = self.try_consume_named_type() { return Ok(named_type) }
+        else if let Ok(_) = self.try_consume_bang() { return Ok(Type::Never) }
+        else if let Ok(_) = self.try_consume_question() { return Ok(Type::Unknown) }
+        else if let Ok(str_lit) = self.try_consume_str_lit() { return Ok(Type::LiteralStr(str_lit)) }
+        else if let Ok(num_lit) = self.try_consume_num_lit() {
+            return match num_lit {
+                NumericLiteralExpr { num_lit: NumericLiteral::ImplicitDecI(ref int_str), neg } => Ok(Type::LiteralInt(i64::from_str_radix(int_str, 10)?)),
+                NumericLiteralExpr { num_lit: NumericLiteral::ImplicitHexI(ref int_hex), neg } => Ok(Type::LiteralInt(i64::from_str_radix(int_hex, 16)?)),
+                NumericLiteralExpr { num_lit: NumericLiteral::I64Lit(ref i64_str), neg } => Ok(Type::LiteralInt(i64::from_str_radix(i64_str, 10)?)),
+                NumericLiteralExpr { num_lit, .. } => Err(ParserError::NumericLiteralTypeMustBeI64(self.now_parsing_what(), num_lit) )
+            }
+        }
+        else { return Err(ParserError::DevGeneric) } // TODO delete dev generic
+
+
         match self.peek() {
             Token { core: TokenCore::OpenParen, .. } => self.advance(),  // () or (Type) or (Type, Type, ...)
-            Token { core: TokenCore::Ident(id), .. }  => { self.advance() ;; return self.try_consume_named_type() }, // NamedType
-            Token { core: TokenCore::OpenBracket, .. } => { self.advance() ;; return self.try_consume_bracket_type() }  // [Type]
-            Token { core: TokenCore::Bang, .. } => { self.advance() ;; return Ok(Type::Never); },  // ! type is never type
-            Token { core: TokenCore::Question, .. } => { self.advance() ;; return Ok(Type::Unknown); },  // ? type is unknown type
             Token { core: TokenCore::StrLit(str), .. } => { self.advance() ;; return Ok(Type::LiteralStr(str)) },
-            Token { core: TokenCore::Numeric(NumericLiteral::ImplicitDecI(str)), .. } => { Ok(Type::LiteralInt(i64::from_str_radix(str, 10)?)) }
-            Token { core: TokenCore::Numeric(NumericLiteral::ImplicitHexI(str)), .. } => { Ok(Type::LiteralInt(i64::from_str_radix(str, 16)?)) }
+            Token { core: TokenCore::Numeric(NumericLiteral::ImplicitDecI(str)), .. } => { self.advance() ;; return Ok(Type::LiteralInt(i64::from_str_radix(str, 10)?)) }
+            Token { core: TokenCore::Numeric(NumericLiteral::ImplicitHexI(str)), .. } => { self.advance() ;; return Ok(Type::LiteralInt(i64::from_str_radix(str, 16)?)) }
             token => return Err(ParserError::TypeExpected(token))
         };  // if seen open paren, continue, expect (), (Type), (Type, Type, ...)
         let mut tuple_list: Vec<Type> = vec![];
@@ -385,7 +478,7 @@ impl ParsingWorktable<'_> {
             match self.peek() {
                 Token { core: TokenCore::Comma, .. } => self.advance(),
                 Token { core: TokenCore::CloseParen, .. } => { self.advance() ;; return Ok(Type::from_vec(tuple_list)); },
-                token => return Err(ParserError::TypeTupleCommaOrCloseParenExpected(token?)),
+                token => return Err(ParserError::TypeTupleCommaOrCloseParenExpected(token)),
             }
         };
         impl From<ParseIntError> for ParserError<'_> {
@@ -399,8 +492,9 @@ impl ParsingWorktable<'_> {
         self.try_it(|| { self._consume_bracket_type() })
     }
     fn _consume_bracket_type(&self) -> Result<Type, ParserError> {
+        let _ = self.try_consume_open_bracket()?;
         let type_within = self.try_consume_type()?;
-        let _close_bracket = self.try_consume_close_bracket()?;
+        let _ = self.try_consume_close_bracket()?;
         return Ok(Type::Bracket(Box::new(type_within)))
     }
 
@@ -426,19 +520,18 @@ impl ParsingWorktable<'_> {
     }
 }
 
-fn trtt(ident: i64,) {
-
-}
-
 // try consume whole items: Fn, Struct, Enum
 impl ParsingWorktable<'_> {
+    fn try_consume_fn_decl(&self) -> Result<FnDecl, ParserError> {
+        self.try_it(|| { self._consume_fn_decl() })
+    }
     fn _consume_fn_decl(&self) -> Result<FnDecl, ParserError> {
         self.now_parsing.set(NowParsingWhat::Fn);
         let visibility = self.try_consume_visibility_modifier()?;
-        let keyword_fn = self.try_consume_keyword(Keyword::Fn)?;
+        let _ = self.try_consume_keyword(Keyword::Fn)?;
         let fn_ident = self.try_consume_ident()?;
         self.now_parsing.set(NowParsingWhat::FnParamList);
-        let open_paren = self.try_consume_open_paren()?;
+        let _ = self.try_consume_open_paren()?;
         let mut param_list: Vec<(&str, Type)> = vec![];
         'expect_param_ident: loop {
             let ident = match self.try_consume_ident() {
@@ -453,12 +546,13 @@ impl ParsingWorktable<'_> {
                 Ok(comma) => comma,
             };
         }
-        let close_paren = self.try_consume_close_paren();
-        let return_type = match self.peek() {
-            Token { core: TokenCore::Arrow, .. } => { self.advance() ;; self.try_consume_type()? }
-            Token { core: TokenCore::OpenCurly, .. } => { Type::Unit }
-            token => return Err(ParserError::OpenCurlyExpected(self.now_parsing_what(), token)),
-        };
+        let _ = self.try_consume_close_paren();
+
+        let return_type = if let Ok(_) = self.try_consume_arrow() { self.try_consume_type()? }
+        else if let Token { core: TokenCore::OpenCurly, .. } = self.peek() { Type::Unit }
+        else { return Err(ParserError::OpenCurlyExpected(self.now_parsing_what(), self.peek())) };
+
+
         let open_curly = self.try_consume_open_curly()?;
         self.now_parsing.set(NowParsingWhat::FnBody);
         let mut fn_body_items: Vec<FnBodyStuff> = vec![];
@@ -474,6 +568,8 @@ impl ParsingWorktable<'_> {
         //
         // }
 
+        let close_curly = self.try_consume_close_curly()?;
+
         return Ok(FnDecl {
             fn_ident,
             return_type,
@@ -487,7 +583,10 @@ impl ParsingWorktable<'_> {
 // consume: concrete mod, file
 enum EndWith { CloseBrace, Eof }
 impl ParsingWorktable<'_> {
-    fn _consume_file<'a>(&'a self, file_name: &'a str) -> Result<File<'a>, ParserError<'a>> {
+    fn try_consume_file(&self) -> Result<File, ParserError> {
+        self.try_it(|| {self._consume_file() })
+    }
+    fn _consume_file(&self) -> Result<File, ParserError> {
         let mut top_level_vec: Vec<TopLevelStuff> = vec![];
         loop {
             if let Ok(top_level) = self.try_consume_top_level_stuff() {
@@ -527,11 +626,11 @@ impl ParsingWorktable<'_> {
         self.try_it(|| { self._consume_top_level_stuff() })
     }
     fn _consume_top_level_stuff(&self) -> Result<TopLevelStuff, ParserError> {
-        // TODO: if let Ok(fn_decl) = self.try_consume_fn_decl() { Ok(TopLevelStuff::FnDecl(fn_decl)) }
+        if let Ok(fn_decl) = self.try_consume_fn_decl() { Ok(TopLevelStuff::FnDecl(fn_decl)) }
         // TODO: else if let Ok(enum_) = self.try_consume_enum() { Ok(TopLevelStuff::Enum(enum_)) }
         // TODO: else if let Ok(struct_) = self.try_consume_struct() { Ok(TopLevelStuff::Struct(struct_)) }
         // else
-        if let Ok(mod_) = self.try_consume_mod() { Ok(TopLevelStuff::Mod(mod_)) }
+        else if let Ok(mod_) = self.try_consume_mod() { Ok(TopLevelStuff::Mod(mod_)) }
         // TODO: else if let Ok(impl_) = self.try_consume_impl() { Ok(TopLevelStuff::Impl(impl_)) }
         else { Err(ParserError::TopLevelItemExpected(self.now_parsing_what(), self.peek())) }
     }
@@ -553,7 +652,7 @@ mod test {
         //println!("{:?}", (&tokens, &errs));
 
         let mut worktable = ParsingWorktable::new(&tokens);
-        let fn_decl = worktable.try_consume_file("anonymous");
+        let fn_decl = worktable.try_consume_file();
         println!("{:?}", fn_decl);
         //println!("{:?}", worktable);
     }
@@ -566,7 +665,7 @@ mod test {
         //println!("{:?}", (&tokens, &errs));
 
         let mut worktable = ParsingWorktable::new(&tokens);
-        let fn_decl = worktable.try_consume_file("anonymous");
+        let fn_decl = worktable.try_consume_file();
         println!("{:?}", fn_decl);
         //println!("{:?}", worktable);
     }
@@ -576,24 +675,31 @@ mod test {
         let program =
             r########"
 
-            enum Option<T> {
-                None,
-                Some(T)
-            }
+            // enum Option<T> {
+            //     None,
+            //     Some(T)
+            // }
 
-            struct Point0D;
-            struct Point1D(i64);
-            struct Point2D(i64, i64);
-            struct FirstNameLastName {
-                first_name: str,
-                last_name: str,
-            }
+            // struct Point0D;
+            // struct Point1D(i64);
+            // struct Point2D(i64, i64);
+            // struct FirstAndLast {
+            //     first_name: str,
+            //     last_name: str,
+            // }
 
-            fn x() -> [u8] {}
+            fn x(
+                x: i64,
+                y: i64,
+            )
+                -> [u8]
+            {
+
+            }
 
             // mod outermod { mod innermod { fn innerfn() {} }  }
 
-            mod mod_decl;
+            // mod mod_decl;
 
 
             "########;
@@ -601,8 +707,7 @@ mod test {
         //println!("{:?}", (&tokens, &errs));
 
         let mut worktable = ParsingWorktable::new(&tokens);
-        let fn_decl = worktable.try_consume_file("anonymous");
-        println!("{:?}", fn_decl);
-        //println!("{:?}", worktable);
+        let fn_decl = worktable.try_consume_file();
+        dbg!(fn_decl);
     }
 }

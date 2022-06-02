@@ -5,36 +5,34 @@
 - scripting language
 - interpreted
 - rust vm
+- easily context switch between rust code and bruh code due to rust syntax and semantics
 - embedded language, released as a crate
 - extensible language
-- api tbd
-- author wants an embedded language but takes one look at lua and be like… lemme write my own
 - inspired by lua
-- indexes start at 0
-- has proper dynamic array (list) and map (record) type
-- statically typed, great type inference, i hope one day
+  - indexes start at 0
+  - has proper dynamic array (list) and map (record) type
+  - statically typed, great type inference, I hope one day
 - variable declaration should seldom require type annotation
-- tagged union aka enum. no ts-style: `bool | str`
-- enum can have value attached
 - runtime type introspection
 - inspired by Wren but want integer support
-- good integer support: `i128 i64 i32 i8 u128 u64 u32 u8 f64 f32 bigint`
-- destructuring and pattern matching
-- emulates some derive macros
-  - `#[derive(Debug, PartialEq, Copy, Clone, Hash, Default)]`
-- GCed
-- parametric polymorphism
-- structs, enums, traits, functions, impls.
-- syntax influenced by c, rust, js, ts, swift
+  - good integer support: `u128 i128 u64 i64 u32 i32 u16 i16 u8 i8 usize isize f64 f32 bigint`
+- inspired by rust
+  - no lifetime, no borrow checker, no explicit referencing. GC.
+  - rust style enum, struct, trait, fn, mod, impl
+  - destructuring and pattern matching on let, if let, match, function parameter
+  - emulates some derive macros
+    - `#[derive(Debug, PartialEq, Copy, Clone, Hash, Default)]`
+  - parametric polymorphism
+- syntax influenced by rust, c.
   - function call = function name + parentheses
   - list items separated by commas
   - lexical scope with braces
   - implicit return
-  - variable shadowing like rust
+  - variable shadowing
   - semicolon: required to separate expressions
   - newline treated as whitespace
   - whitespace syntactically irrelevant
-  - fat arrow anonymous function
+  - closure syntax tbd
   - symbol qualification like rust
     - `structure.associated_function(argument)`
     - `Structure::associated_function(argument)`
@@ -44,12 +42,22 @@
 - unit-testing included - also like rust
   - `#[test]`
   - `#[should_panic]`
-- functions always require type signature annotations
+- functions always require type signature annotations (closure is exempted where can be inferred)
 - strict typing, `struct Duck(str)` can’t be used in place for `struct Dack(str)`
 - standard library implements functional programming primitives (functor applicative monad etc.)
 - basically everything is expression
   - declaration, assignment and mutation expressions evaluates to unit value `()`
   - block expression evaluates to the value of its last sub-expression
+
+### Summary
+
+> This is an embedded scripting language for rust projects.
+> Rust users should be able to context switch between bruh and rust effortlessly due to similar syntax and semantics.
+> Has a higher barrier to entry due to rust-like syntax, semantics and module system.
+> More ergonomic than rust due to lack of lifetime, borrow checker and explicit referencing, and easier string.
+> Handy for one-pager gists, handy for large structured projects, (i.e. good module system)
+> Software: write perf critical code in rust, rapidly evolving code in bruh, have the two call each other.  
+
 
 ## Type
 
@@ -118,42 +126,8 @@ Because we're heavily influenced by rust, similarities abound
 
 ## Module and Visibility 
 
-This aspect of the language is profoundly important for structured projects, 
-so it deserves careful thoughts and detailed elaboration.
-
-### Considering Rust's mod/pub approach
-
-At first rust's privacy model looked like its simple yet powerful. Upon closer inspection, 
-powerful it is indeed, but there is actually a ton of subtle behaviours and rules. [This](
-https://www.sheshbabu.com/posts/rust-module-system/) is a good read.
-
-Though complicated, rust module is almost uniquely powerful in that it allows for a certain region of implementation 
-detail to be hidden from other parts of the language, while still allowing those impls to split across files. 
-This can't be done in, say, TS. In TS, if you split code across files, some of them must be made public with 
-`export function public_interface()` to be useful. But once you do that, another file from across the street can import it,
-meaning it is public to the whole project. So you can't for example have a folder of files that is only visible to the parent.
-(Not a blow against TS, other languages like python, cpp, ruby etc has even worse encapsulation than TS)
-
-With rust, there is `pub(super)` and `pub(in path::to::parent)`, exposing the impl detail only to the scope where it's needed.
-However, I decided against adopting this powerful solution, and instead went with something similar to TS.  
-And I document my reasoning below.
-
-1. To adopt rust's mod system, a hierarchy must be established amongst source files. A root (crate) must exist,
-and each module resides on a node on the module tree down from the root. Only then is it meaningful to refer to 
-`super` and `parent` and `submodule`. Bruh being a scripting language does not want this. 
-Bruh wants all source files to simply be blobs of text that encode some AST. Exactly where the AST happens to locate on the
-filesystem should be transparent to both the {caller, importer, user} and the {callee, exporter, lib}.
-Because of this flatness, 'parent' and 'descendant' don't exist so `pub(super)` wouldn't make sense.
-
-2. Being able to encapsulate across multiple files and expose them to the exact scope needed, like rust allows you to, 
-is an advanced feature. Small amounts of people will need this feature, still, I think it's a really neat feature that I 
-want bruh to have. But I think it's a reasonable thing to say, let's make everyday module interactions stupidly simple 
-like they have in TS, So nothing surprising and very easy to learn without having to look at documentation. 
-When you do need the feature, you look at the docs, and you learn that the feature exists, in a logical, 
-syntactically consistent way, and it won't impact you unless you decide to use it. (or maintain code that uses it).
-
-3. This is an inherently double-edged sword. It makes software less brittle by segmented encapsulation, 
-but those segments themselves becomes brittle
+After researching I come to the conclusion that rust module system is really the bare minimum of usability. I will steal 
+it wholesale, except for the `mod.rs` part, which is basically deprecated.
 
 ## Some expectations to be met, being a "scripting language"
 

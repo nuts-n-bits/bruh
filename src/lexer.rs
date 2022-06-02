@@ -1,12 +1,23 @@
 #![allow(dead_code, redundant_semicolons)]
 
 const MAX_IDENT_LENGTH: usize = 1024;
-const MAX_NUM_LITERAL_LENGTH: usize = 32768;   // A 0.25MB num literal maximum
+const MAX_NUM_LITERAL_LENGTH: usize = 1024;   // Arbitrary
 const MAX_INTERPOLATION_NESTING: usize = 32;   // Arbitrary
 const START_COL: usize = 1;    // usually 1 or 0 for error message purpose
 const START_LINE: usize = 1;   // usually 1 or 0 for error message purpose
 
 mod helper {
+
+    struct Plain(i64);
+
+    fn playground(incoming: Plain) {
+
+        let Plain = incoming;
+
+        let x = Plain;
+
+
+    }
 
     use std::num::ParseIntError;
     use super::LexerErrCases;
@@ -25,6 +36,7 @@ mod helper {
             || (char >= 'a' && char <= 'z')
             || (char >= 'A' && char <= 'Z')  // a-zA-Z for hex and suffix explicit type annotations
             || char == '_'  // numerical visual separator largely ignored
+        // 1e-10 case is handled by lexer itself
     }
     pub fn hex_digit_val(c: char) -> Option<u8> {
         if c as u8 >= '0' as u8 && c as u8 <= '9' as u8 { return Some(c as u8 - '0' as u8) }
@@ -86,6 +98,13 @@ mod helper {
         }
         None
     }
+    pub fn last_5_are(cs: &[char], match_with: [char; 5]) -> Option<&[char]> {
+        if cs.len() >= 5 && cs[cs.len()-1] == match_with[4] && cs[cs.len()-2] == match_with[3]
+            && cs[cs.len()-3] == match_with[2] && cs[cs.len()-4] == match_with[1] && cs[cs.len()-5] == match_with[0] {
+            return Some(&cs[..cs.len()-5])
+        }
+        None
+    }
     pub fn err_transform<T>(res: Result<T, ParseIntError>) -> Result<T, LexerErrCases> {
         match res {
             Ok(t) => Ok(t),
@@ -100,6 +119,8 @@ mod helper {
     }
 }
 use helper::{*};
+use crate::lexer::TokenCore::StrLit;
+use crate::parser::ParserError::UnexpectedEof;
 
 #[derive(Debug, PartialEq)]
 pub enum LexerErrCases {
@@ -126,6 +147,7 @@ pub enum LexerErrCases {
     InvalidHexEscapeVal,
     InvalidLabelName(String),
     UnexpectedCharacter(char),
+    UnexpectedEof,
 }
 
 #[derive(Debug, PartialEq)]
@@ -214,35 +236,43 @@ impl Keyword {
 
 #[derive(Debug, PartialEq)]
 pub enum NumericLiteral {
-    //  1. Unary operator '-' not seen as numerical token by lexer (necessitates N.B. #2)
+    //  1. Unary operator '-' not seen as numerical token by lexer (necessitates N.B. #1-2)
     //  2. Float values may not begin with '.'
     //  3. Float values must have decimal point in it or be of scientific notation
     //  4. Int values mustn't have decimal point nor be scientific.
-    ImplicitDecI(String),  //  Unannotated integer literal  - not parsed - decimal
-    ImplicitDecF(f64),     //  Unannotated floating literal - not parsed - decimal
-    ImplicitHexI(String),  //  Unannotated integer literal  - not parsed - hex
-    // ImplicitHexF,          //  Unannotated floating literal - not parsed - hex     - currently not supported
-    I128Lit(u128),         //  Annotated i128 literal       - parsed     - decimal
-    U128Lit(u128),         //  Annotated u128 literal       - parsed     - decimal
-    I64Lit(u64),           //  Annotated i64 literal        - parsed     - decimal
-    U64Lit(u64),           //  Annotated u64 literal        - parsed     - decimal
-    F64Lit(f64),           //  Annotated f64 literal        - parsed     - decimal
-    I32Lit(u32),           //  Annotated i32 literal        - parsed     - decimal
-    U32Lit(u32),           //  Annotated u32 literal        - parsed     - decimal
-    F32Lit(f32),           //  Annotated f32 literal        - parsed     - decimal
-    I8Lit(u8),             //  Annotated i8 literal         - parsed     - decimal
-    U8Lit(u8),             //  Annotated u8 literal         - parsed     - decimal
-    BigDecLit(String),     //  Annotated bigint literal     - not parsed - decimal
-    BigHexLit(String),     //  Annotated bigint literal     - not parsed - hex
-    //  N.B 1 also, ImplicitI types must remain String because they might need to be parsed
-    //        differently based on semantics and type inference.
-    //  N.B 2 IxxInt are represented as Uint so that abs(ixx::MIN) does not cause overflow
-    //        Otherwise, (-128i8) will be parsed as (Token::Dash, I8Lit(128)) which overflows.
+    ImplicitDecI(String),   //  Unannotated integer literal  - decimal
+    ImplicitDecF(String),   //  Unannotated floating literal - decimal
+    ImplicitHexI(String),   //  Unannotated integer literal  - hex
+    //ImplicitHexF(String), //  Unannotated floating literal - hex     - currently not supported
+    I128Lit(String),        //  Annotated i128 literal       - decimal
+    U128Lit(String),        //  Annotated u128 literal       - decimal
+    I64Lit(String),         //  Annotated i64 literal        - decimal
+    U64Lit(String),         //  Annotated u64 literal        - decimal
+    F64Lit(String),         //  Annotated f64 literal        - decimal
+    I32Lit(String),         //  Annotated i32 literal        - decimal
+    U32Lit(String),         //  Annotated u32 literal        - decimal
+    F32Lit(String),         //  Annotated f32 literal        - decimal
+    I16Lit(String),         //  Annotated i16 literal.       - decimal - TODO: implement it
+    U16Lit(String),         //  Annotated u16 literal.       - decimal - TODO: implement it
+    I8Lit(String),          //  Annotated i8 literal         - decimal
+    U8Lit(String),          //  Annotated u8 literal         - decimal
+    ISizeLit(String),       //  Annotated isize literal.     - decimal - TODO: implement it
+    USizeLit(String),       //  Annotated usize literal.     - decimal - TODO: implement it
+    BigDecLit(String),      //  Annotated bigint literal     - decimal
+    BigHexLit(String),      //  Annotated bigint literal     - hex
+    //  N.B All numeric literals must remain string lexemes at this stage. for 2 reasons.
+    //      1. Implicit numbers may assume different types, and thus must be interpreted
+    //         accordingly. Only the parser has that knowledge.
+    //      2. Negatively signed numeric literals are lexed as `Dash` and `NumericLiteral`. Because
+    //         the lexing grammar cannot tell apart the negativity sign, unary negation operator and
+    //         binary subtraction operator. Only the parser has that knowledge. If the lexer parsed
+    //         the numbers, -128i8 (which is legal) becomes [Dash, I8Lit(128i8)] which will overflow
+    //         the i8 (ranged [-128, +127]). So instead it is processed into [Dash, I8Lit("128")].
 }
 
 impl NumericLiteral {
     fn from_chars(chars: Vec<char>) -> Result<NumericLiteral, LexerErrCases> {
-        // No trailing underscore
+        // No trailing underscore (no need to check starting underscore because it will be treated as identifier)
         if chars.last() == Some(&'_') {
             return Err(LexerErrCases::NumLiteralTrailingUnderscore)
         }
@@ -251,7 +281,7 @@ impl NumericLiteral {
             return Err(LexerErrCases::NumLiteralContinuousUnderscore)
         }
         // getting rid of underscores (visual digit separators)
-        let chars = chars.into_iter().filter(|x| { x != &'_' }).collect::<Vec<char>>();
+        let chars = chars.into_iter().filter(|x| x != &'_').collect::<Vec<char>>();
         // If is hex num
         if chars.len() >= 3 && chars[0] == '0' && chars[1] == 'x' {
             return NumericLiteral::from_chars_hex(&chars[2..])
@@ -269,45 +299,47 @@ impl NumericLiteral {
         }
         // Case (2) Annotated Int/Uint
         if let Some(annot_axed) = last_4_are(&chars, ['i', '1', '2', '8']) {
-            let parsed = err_transform(u128::from_str_radix(&annot_axed.iter().collect::<String>(), 10))?;
-            return Ok(NumericLiteral::I128Lit(parsed));
+            return Ok(NumericLiteral::I128Lit(annot_axed.into_iter().collect()));
         }
         if let Some(annot_axed) = last_4_are(&chars, ['u', '1', '2', '8']) {
-            let parsed = err_transform(u128::from_str_radix(&annot_axed.iter().collect::<String>(), 10))?;
-            return Ok(NumericLiteral::U128Lit(parsed));
+            return Ok(NumericLiteral::U128Lit(annot_axed.into_iter().collect()));
         }
         if let Some(annot_axed) = last_3_are(&chars, ['i', '6', '4']) {
-            let parsed = err_transform(u64::from_str_radix(&annot_axed.iter().collect::<String>(), 10))?;
-            return Ok(NumericLiteral::I64Lit(parsed));
+            return Ok(NumericLiteral::I64Lit(annot_axed.into_iter().collect()));
         }
         if let Some(annot_axed) = last_3_are(&chars, ['u', '6', '4']) {
-            let parsed = err_transform(u64::from_str_radix(&annot_axed.iter().collect::<String>(), 10))?;
-            return Ok(NumericLiteral::U64Lit(parsed));
+            return Ok(NumericLiteral::U64Lit(annot_axed.into_iter().collect()));
         }
         if let Some(annot_axed) = last_3_are(&chars, ['i', '3', '2']) {
-            let parsed = err_transform(u32::from_str_radix(&annot_axed.iter().collect::<String>(), 10))?;
-            return Ok(NumericLiteral::I32Lit(parsed));
+            return Ok(NumericLiteral::I32Lit(annot_axed.into_iter().collect()));
         }
         if let Some(annot_axed) = last_3_are(&chars, ['u', '3', '2']) {
-            let parsed = err_transform(u32::from_str_radix(&annot_axed.iter().collect::<String>(), 10))?;
-            return Ok(NumericLiteral::U32Lit(parsed));
+            return Ok(NumericLiteral::U32Lit(annot_axed.into_iter().collect()));
+        }
+        if let Some(annot_axed) = last_3_are(&chars, ['i', '1', '6']) {
+            return Ok(NumericLiteral::I16Lit(annot_axed.into_iter().collect()));
+        }
+        if let Some(annot_axed) = last_3_are(&chars, ['u', '1', '6']) {
+            return Ok(NumericLiteral::U16Lit(annot_axed.into_iter().collect()));
         }
         if let Some(annot_axed) = last_2_are(&chars, ['i', '8']) {
-            let parsed = err_transform(u8::from_str_radix(&annot_axed.iter().collect::<String>(), 10))?;
-            return Ok(NumericLiteral::I8Lit(parsed));
+            return Ok(NumericLiteral::I8Lit(annot_axed.into_iter().collect()));
         }
         if let Some(annot_axed) = last_2_are(&chars, ['u', '8']) {
-            let parsed = err_transform(u8::from_str_radix(&annot_axed.iter().collect::<String>(), 10))?;
-            return Ok(NumericLiteral::U8Lit(parsed));
+            return Ok(NumericLiteral::U8Lit(annot_axed.into_iter().collect()));
+        }
+        if let Some(annot_axed) = last_5_are(&chars, ['i', 's', 'i', 'z', 'e']) {
+            return Ok(NumericLiteral::ISizeLit(annot_axed.into_iter().collect()));
+        }
+        if let Some(annot_axed) = last_5_are(&chars, ['u', 's', 'i', 'z', 'e']) {
+            return Ok(NumericLiteral::USizeLit(annot_axed.into_iter().collect()));
         }
         // Case (3) Annotated Float
         if let Some(annot_axed) = last_3_are(&chars, ['f', '6', '4']) {
-            let parsed = err_transform2(annot_axed.iter().collect::<String>().parse::<f64>())?;
-            return Ok(NumericLiteral::F64Lit(parsed));
+            return Ok(NumericLiteral::F64Lit(annot_axed.into_iter().collect()));
         }
         if let Some(annot_axed) = last_3_are(&chars, ['f', '3', '2']) {
-            let parsed = err_transform2(annot_axed.iter().collect::<String>().parse::<f32>())?;
-            return Ok(NumericLiteral::F32Lit(parsed));
+            return Ok(NumericLiteral::F32Lit(annot_axed.into_iter().collect()));
         }
         // Case (4) Bigint Decimal
         if let Some(annot_axed) = last_1_is(&chars, 'n') {
@@ -318,8 +350,7 @@ impl NumericLiteral {
             }
         }
         // Case (5) ImplicitF -- we parse it into f64 by default
-        let parsed = err_transform2(chars.iter().collect::<String>().parse::<f64>())?;
-        return Ok(NumericLiteral::ImplicitDecF(parsed));
+        return Ok(NumericLiteral::ImplicitDecF(chars.into_iter().collect()));
     }
     /** CALLERS: drop the leading "0x" then pass the rest of the chars to this function for parsing.
                Hex Numeric literal currently only support integers. To add decimal point need to support modify this function
@@ -546,8 +577,8 @@ impl LexingWorktable {
     //   2) Float literal: MUST EITHER decimal point OR scientific notation
     //   3) With hex literals, scientific notation goes out the window.
     //      n.b. Scientific = must be float!
-    //   4) Hex literals can have decimal point, but cannot start with dot.
-    //   5) Hex literals cannot use number type suffix. (NO 0x0i64 or 0x0f64, vs 40i64 7.25f64)
+    //   4) Hex literals cannot have decimal point.
+    //   5) Hex literals cannot use number type suffix. (NO 0x0i64 or 0x0f64. because f is a digit.)
     //   6) Scientific notation can have decimal point.
     // In conclusion, the following cases must be dealt with:
     //   1) 0xBBBBBB      Plain integer
@@ -813,10 +844,11 @@ fn lexer_step(worktable: &mut LexingWorktable) -> Result<Token, LexerErrMsg> {
             ' ' | '\t' | '\n' | '\r' => worktable.skip_whitespace(),
             '"' => return worktable.consume_str_literal(),
             '\'' => {
-                return match (worktable.peek()?, worktable.peek_next(), char_can_start_ident(worktable.peek()?)) {
-                    (ch, Some('\''), _) => { worktable.advance_x(2); Ok(worktable.add_metadata(TokenCore::Char(ch))) },
-                    (_ident_char, _not_apos_again, true) => { worktable.consume_apos_ident() },
-                    ('\\', Some(not_eof), _) => {
+                let char_1 = worktable.peek();
+                return match (char_1, worktable.peek_next(), char_can_start_ident(char_1.unwrap_or('1'))) {  // if char_1 is None, then char_can_start_ident doesn't matter.
+                    (Some(ch), Some('\''), _) => { worktable.advance_x(2); Ok(worktable.add_metadata(TokenCore::Char(ch))) },
+                    (Some(_ident_char), _not_apos_again, true) => { worktable.consume_apos_ident() },
+                    (Some('\\'), Some(_not_eof), _) => {
                         worktable.advance();  // go past '\\'
                         let char = worktable.consume_escape_sequence()?;
                         match worktable.consume() {
@@ -878,6 +910,7 @@ pub fn lexer(str: &str) -> (Vec<Token>, Vec<LexerErrMsg>) {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Index;
     use super::{lexer_internal, Keyword, LexingWorktable, TokenCore, last_2_are, last_3_are, last_4_are, LexerErrCases, LexerErrMsg, NumericLiteral, remove_leading_0s};
 
     fn wtb(str: &str) -> LexingWorktable {
@@ -1016,9 +1049,9 @@ mod tests {
         assert_eq!(results[2].core, TokenCore::Colon);
         assert_eq!(results[3].core, TokenCore::Ident("i64".into()));
         assert_eq!(results[4].core, TokenCore::Eq);
-        assert_eq!(results[5].core, TokenCore::Numeric(NumericLiteral::I64Lit(488285)));
+        assert_eq!(results[5].core, TokenCore::Numeric(NumericLiteral::I64Lit("488285".into())));
         assert_eq!(results[6].core, TokenCore::Dash);
-        assert_eq!(results[7].core, TokenCore::Numeric(NumericLiteral::ImplicitDecF(535e-99)));
+        assert_eq!(results[7].core, TokenCore::Numeric(NumericLiteral::ImplicitDecF("535e-99".into())));
         assert_eq!(results[8].core, TokenCore::Numeric(NumericLiteral::ImplicitHexI("4294967296".into())));
         assert_eq!(results[9].core, TokenCore::Numeric(NumericLiteral::ImplicitDecI("4294967296".into())));
         assert_eq!(results[10].core, TokenCore::Eof);
@@ -1031,11 +1064,11 @@ mod tests {
         assert_eq!(results.len(), 11);
         assert_eq!(results[0].core, TokenCore::Numeric(NumericLiteral::ImplicitDecI("5783628".into())));
         assert_eq!(results[1].core, TokenCore::Numeric(NumericLiteral::ImplicitDecI("0".into())));
-        assert_eq!(results[2].core, TokenCore::Numeric(NumericLiteral::ImplicitDecF(483.535)));
-        assert_eq!(results[3].core, TokenCore::Numeric(NumericLiteral::ImplicitDecF(553.0)));
-        assert_eq!(results[4].core, TokenCore::Numeric(NumericLiteral::ImplicitDecF(0.0)));
-        assert_eq!(results[5].core, TokenCore::Numeric(NumericLiteral::ImplicitDecF(435e3)));
-        assert_eq!(results[6].core, TokenCore::Numeric(NumericLiteral::ImplicitDecF(30e0)));
+        assert_eq!(results[2].core, TokenCore::Numeric(NumericLiteral::ImplicitDecF("483.535".into())));
+        assert_eq!(results[3].core, TokenCore::Numeric(NumericLiteral::ImplicitDecF("553.0".into())));
+        assert_eq!(results[4].core, TokenCore::Numeric(NumericLiteral::ImplicitDecF("0.0".into())));
+        assert_eq!(results[5].core, TokenCore::Numeric(NumericLiteral::ImplicitDecF("435e3".into())));
+        assert_eq!(results[6].core, TokenCore::Numeric(NumericLiteral::ImplicitDecF("30e0".into())));
         assert_eq!(results[7].core, TokenCore::Numeric(NumericLiteral::ImplicitHexI("425".into())));
         assert_eq!(results[8].core, TokenCore::Numeric(NumericLiteral::ImplicitHexI("0".into())));
         assert_eq!(results[9].core, TokenCore::Numeric(NumericLiteral::ImplicitHexI("0".into())));
@@ -1048,16 +1081,16 @@ mod tests {
         let (results, errs) = lexer_internal(&mut worktable);
         assert_eq!(errs.len(), 0);
         assert_eq!(results.len(), 11);
-        assert_eq!(results[0].core, TokenCore::Numeric(NumericLiteral::I128Lit(477924)));
-        assert_eq!(results[1].core, TokenCore::Numeric(NumericLiteral::I128Lit(0)));
+        assert_eq!(results[0].core, TokenCore::Numeric(NumericLiteral::I128Lit("477924".into())));
+        assert_eq!(results[1].core, TokenCore::Numeric(NumericLiteral::I128Lit("0".into())));
         assert_eq!(results[2].core, TokenCore::Ident("i128".into()));
-        assert_eq!(results[3].core, TokenCore::Numeric(NumericLiteral::I128Lit(179074592501695641056747015895)));
-        assert_eq!(results[4].core, TokenCore::Numeric(NumericLiteral::U128Lit(48924757387452198439824)));
-        assert_eq!(results[5].core, TokenCore::Numeric(NumericLiteral::U128Lit(0)));
-        assert_eq!(results[6].core, TokenCore::Numeric(NumericLiteral::I64Lit(3749257)));
-        assert_eq!(results[7].core, TokenCore::Numeric(NumericLiteral::I64Lit(0)));
-        assert_eq!(results[8].core, TokenCore::Numeric(NumericLiteral::U64Lit(47837585325)));
-        assert_eq!(results[9].core, TokenCore::Numeric(NumericLiteral::U64Lit(0)));
+        assert_eq!(results[3].core, TokenCore::Numeric(NumericLiteral::I128Lit("179074592501695641056747015895".into())));
+        assert_eq!(results[4].core, TokenCore::Numeric(NumericLiteral::U128Lit("48924757387452198439824".into())));
+        assert_eq!(results[5].core, TokenCore::Numeric(NumericLiteral::U128Lit("0".into())));
+        assert_eq!(results[6].core, TokenCore::Numeric(NumericLiteral::I64Lit("3749257".into())));
+        assert_eq!(results[7].core, TokenCore::Numeric(NumericLiteral::I64Lit("0".into())));
+        assert_eq!(results[8].core, TokenCore::Numeric(NumericLiteral::U64Lit("47837585325".into())));
+        assert_eq!(results[9].core, TokenCore::Numeric(NumericLiteral::U64Lit("0".into())));
         assert_eq!(results[10].core, TokenCore::Eof);
 
         let mut worktable = wtb(
@@ -1066,12 +1099,12 @@ mod tests {
         let (results, errs) = lexer_internal(&mut worktable);
         assert_eq!(errs.len(), 0);
         assert_eq!(results.len(), 7);
-        assert_eq!(results[0].core, TokenCore::Numeric(NumericLiteral::I32Lit(0)));
-        assert_eq!(results[1].core, TokenCore::Numeric(NumericLiteral::I32Lit(59753989)));
-        assert_eq!(results[2].core, TokenCore::Numeric(NumericLiteral::I32Lit(0_323_994)));
-        assert_eq!(results[3].core, TokenCore::Numeric(NumericLiteral::U32Lit(0)));
-        assert_eq!(results[4].core, TokenCore::Numeric(NumericLiteral::U32Lit(48284934)));
-        assert_eq!(results[5].core, TokenCore::Numeric(NumericLiteral::U32Lit(4294967295)));
+        assert_eq!(results[0].core, TokenCore::Numeric(NumericLiteral::I32Lit("0".into())));
+        assert_eq!(results[1].core, TokenCore::Numeric(NumericLiteral::I32Lit("59753989".into())));
+        assert_eq!(results[2].core, TokenCore::Numeric(NumericLiteral::I32Lit("0_323_994".into())));
+        assert_eq!(results[3].core, TokenCore::Numeric(NumericLiteral::U32Lit("0".into())));
+        assert_eq!(results[4].core, TokenCore::Numeric(NumericLiteral::U32Lit("48284934".into())));
+        assert_eq!(results[5].core, TokenCore::Numeric(NumericLiteral::U32Lit("4294967295".into())));
         assert_eq!(results[6].core, TokenCore::Eof);
 
         let mut worktable = wtb(
@@ -1081,10 +1114,10 @@ mod tests {
         let (results, errs) = lexer_internal(&mut worktable);
         assert_eq!(errs.len(), 0);
         assert_eq!(results.len(), 9);
-        assert_eq!(results[0].core, TokenCore::Numeric(NumericLiteral::I8Lit(0)));
-        assert_eq!(results[1].core, TokenCore::Numeric(NumericLiteral::I8Lit(127)));
-        assert_eq!(results[2].core, TokenCore::Numeric(NumericLiteral::U8Lit(0)));
-        assert_eq!(results[3].core, TokenCore::Numeric(NumericLiteral::U8Lit(255)));
+        assert_eq!(results[0].core, TokenCore::Numeric(NumericLiteral::I8Lit("0".into())));
+        assert_eq!(results[1].core, TokenCore::Numeric(NumericLiteral::I8Lit("127".into())));
+        assert_eq!(results[2].core, TokenCore::Numeric(NumericLiteral::U8Lit("0".into())));
+        assert_eq!(results[3].core, TokenCore::Numeric(NumericLiteral::U8Lit("255".into())));
         assert_eq!(results[4].core, TokenCore::Numeric(NumericLiteral::BigDecLit("0".into())));
         assert_eq!(results[5].core, TokenCore::Numeric(NumericLiteral::BigDecLit("2048".into())));
         assert_eq!(results[6].core, TokenCore::Numeric(NumericLiteral::BigDecLit("9999999999999999999999999999999999999999999999999999999999999999999999999999".into())));
@@ -1097,8 +1130,8 @@ mod tests {
         let (results, errs) = lexer_internal(&mut worktable);
         assert_eq!(errs.len(), 0);
         assert_eq!(results.len(), 3);
-        assert_eq!(results[0].core, TokenCore::Numeric(NumericLiteral::I8Lit(128)));
-        assert_eq!(results[1].core, TokenCore::Numeric(NumericLiteral::I32Lit(2147483648)));
+        assert_eq!(results[0].core, TokenCore::Numeric(NumericLiteral::I8Lit("128".into())));
+        assert_eq!(results[1].core, TokenCore::Numeric(NumericLiteral::I32Lit("2147483648".into())));
         assert_eq!(results[2].core, TokenCore::Eof);
 
     }
@@ -1121,7 +1154,7 @@ mod tests {
         let results = &lexer_internal(&mut wtb("0000_")).1[0];
         assert_eq!(results.desc, LexerErrCases::NumLiteralTrailingUnderscore);
         let results = &lexer_internal(&mut wtb("0000_i128")).0[0];  // except this trailing case is allowed
-        assert_eq!(results.core, TokenCore::Numeric(NumericLiteral::I128Lit(0)));
+        assert_eq!(results.core, TokenCore::Numeric(NumericLiteral::I128Lit("0".into())));
 
         // wacky letters in literal
         let (results, errs) = &lexer_internal(&mut wtb("\n\n\n\n999m99"));
