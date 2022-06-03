@@ -51,13 +51,17 @@ Types of allowed expressions are: T, \[T], where T is one of u8, u16, u32, u64 a
 ## Optimization
 
 If a bytes literal:
-1. Does not include string interpolation
+
+1. Does not include string interpolation 
 2. Does not have parenthesized expressions
+
 Then it is known at compile time, and it will be a vec point to a prepared chunk at the text section.
 
 If a bytes literal:
+
 1. Does not include string interpolation
 2. Does have parenthesized expressions, but only scalar type
+
 Then its size is known at compile time, and its semantics will be equivalent to calling `Vec::with_capacity(length)`
 and dynamically filling the vec.
 
