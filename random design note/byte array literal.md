@@ -38,10 +38,10 @@ let bytes: [u8] = b!(
 Q: What about if I want something dynamic?
 
 ```
-let (parameter, bitflag): (u8, u8) = (0x85, 1);
+let parameter: u8 = 0x85;
 let input: [u8] = get_input();
 let bytes: [u8] = bytes!(
-    "GIF89a" (parameter) 00 00 00 (input) 01 00 01 00 (bitflag << 3 | bitflag)
+    "GIF89a" (parameter) 00 00 00 (input) 01 00 01 00 (1 << 3 | 1)
 );
 ```
 
